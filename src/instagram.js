@@ -304,7 +304,15 @@ async function processEvent(event) {
   const eventTime = event.timestamp ? Number(event.timestamp) : Date.now();
   if (Date.now() - eventTime > MESSAGING_WINDOW_MS) {
     stats.skippedOutsideWindow += 1;
-    log.logWarn('instagram', `Skipped a reply to ${senderId} - the 24-hour messaging window had closed.`);
+    // Meta's "Test" button in the webhook table sends a canned payload with
+    // a years-old timestamp, which lands here and reads like a real problem.
+    // Say which it is, or setup looks broken when it is working.
+    const ageDays = Math.round((Date.now() - eventTime) / 86400000);
+    if (ageDays > 7) {
+      log.logInfo('instagram', `Ignored a sample payload (sender ${senderId}, dated ${ageDays} days ago). This is Meta's Test button, not a real DM - send an actual message to test properly.`);
+    } else {
+      log.logWarn('instagram', `Skipped a reply to ${senderId} - the 24-hour messaging window had closed.`);
+    }
     return;
   }
 
