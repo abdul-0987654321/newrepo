@@ -184,23 +184,83 @@ function handleWebhook(req, res) {
     return;
   }
 
-  const count = (body.entry || []).reduce((n, e) => n + ((e.messaging || []).length), 0);
-  log.logInfo('instagram', `Webhook POST received from Meta with ${count} event(s).`);
+  const events = extractEvents(body);
+  log.logInfo('instagram', `Webhook POST received from Meta with ${events.length} event(s).`);
+
+  // With nothing to act on, record the shape rather than the content: it is
+  // the only way to tell a harmless test ping from a payload we failed to
+  // understand, and it keeps message text out of the log.
+  if (!events.length) {
+    log.logInfo('instagram', `No message events in that POST. Shape: ${describeShape(body)}`);
+  }
 
   // An event arriving proves the webhook works, which covers the case where
   // the URL was verified before this build started recording it. Only write
   // when it is not already known, so this does not hit the Sheet per message.
   if (!webhookVerifiedAt()) markWebhookSeen();
 
+  for (const event of events) {
+    void processEvent(event).catch((err) => {
+      stats.failed += 1;
+      stats.lastError = err.message;
+      log.logError('instagram', err, 'Processing an Instagram event failed');
+    });
+  }
+}
+
+/**
+ * Meta does not deliver Instagram DMs in one single shape. The documented
+ * one is entry[].messaging[], but installs have been seen receiving them as
+ * entry[].changes[] with field "messages" instead, and the value there is
+ * sometimes a Cloud-API style { messages: [...] } array. Accepting all three
+ * costs nothing and avoids a silent do-nothing bot if Meta routes a given
+ * app the other way.
+ */
+function extractEvents(body) {
+  const events = [];
+
   for (const entry of body.entry || []) {
-    for (const event of entry.messaging || []) {
-      void processEvent(event).catch((err) => {
-        stats.failed += 1;
-        stats.lastError = err.message;
-        log.logError('instagram', err, 'Processing an Instagram event failed');
-      });
+    // Shape 1: the documented Messenger-style envelope.
+    for (const event of entry.messaging || []) events.push(event);
+
+    for (const change of entry.changes || []) {
+      if (change.field !== 'messages') continue;
+      const value = change.value || {};
+
+      // Shape 2: the same event body, wrapped in a change.
+      if (value.sender || value.message) {
+        events.push(value);
+        continue;
+      }
+
+      // Shape 3: Cloud-API style array of messages.
+      for (const msg of value.messages || []) {
+        events.push({
+          sender: { id: msg.from || (value.contacts && value.contacts[0] && value.contacts[0].wa_id) },
+          timestamp: msg.timestamp ? Number(msg.timestamp) * 1000 : Date.now(),
+          message: {
+            mid: msg.id,
+            text: msg.text ? msg.text.body : '',
+          },
+        });
+      }
     }
   }
+
+  return events;
+}
+
+/** Keys only - never values, so no message text reaches the log. */
+function describeShape(body) {
+  const entries = body.entry || [];
+  if (!entries.length) return 'entry: []';
+  return entries
+    .map((e) => {
+      const parts = Object.keys(e).filter((k) => k !== 'id' && k !== 'time');
+      const changes = (e.changes || []).map((c) => `field=${c.field}`).join(',');
+      return parts.length ? `entry{${parts.join(',')}}${changes ? ` [${changes}]` : ''}` : 'entry{id,time only}';
+    })
+    .join(' | ');
 }
 
 async function processEvent(event) {
