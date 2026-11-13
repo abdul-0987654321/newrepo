@@ -929,7 +929,15 @@ async function loadInstagram() {
         ? 'Verified with Meta just now · ' + (ig.tokenKind === 'instagram-login' ? 'Instagram login' : 'Unified login') + ' · ' + (ig.graphHost || '')
         : (ig.reason || 'Set IG_ACCESS_TOKEN'),
     },
-    { done: Boolean(ig.webhookVerifiedAt), label: 'Webhook verified by Meta', detail: ig.webhookVerifiedAt ? 'Verified ' + when(ig.webhookVerifiedAt) : 'Meta has not called the callback URL yet' },
+    {
+      done: Boolean(ig.webhookVerifiedAt) || (ig.posts || 0) > 0,
+      label: 'Meta is reaching your server',
+      detail: (ig.posts || 0) > 0
+        ? (ig.posts + ' webhook call(s), last ' + when(ig.lastPostAt))
+        : (ig.webhookVerifiedAt
+          ? 'URL verified ' + when(ig.webhookVerifiedAt) + ', no events yet'
+          : 'No call from Meta yet. Check the messages field is Subscribed in the Meta app.'),
+    },
     { done: (ig.received || 0) > 0, label: 'A DM has come through', detail: (ig.received || 0) > 0 ? ig.received + ' received, ' + (ig.replied || 0) + ' answered' : 'Send a test DM from another account' },
   ];
 
@@ -1348,7 +1356,10 @@ setInterval(() => {
 setInterval(() => {
   if (currentView === 'leads' || currentView === 'overview') loadLeads();
   if (currentView === 'inbox') loadThreads();
-}, 20000);
+  // The log is what you stare at while setting a channel up, so it has to
+  // move on its own rather than needing the page reloaded.
+  if (currentView === 'activity') loadLog();
+}, 10000);
 </script>
 </body>
 </html>

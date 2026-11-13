@@ -56,6 +56,8 @@ const SEEN_MESSAGE_IDS = new Map();
 const SEEN_TTL_MS = 10 * 60 * 1000;
 
 const stats = {
+  posts: 0,          // raw webhook POSTs from Meta, before any filtering
+  lastPostAt: null,
   received: 0,
   replied: 0,
   skippedOutsideWindow: 0,
@@ -162,15 +164,28 @@ function verifySignature(req) {
  * webhook) if we take too long - then process in the background.
  */
 function handleWebhook(req, res) {
+  // Log the arrival BEFORE anything can reject it. Without this, a webhook
+  // that was received but then dropped (wrong signature, unexpected shape)
+  // looks identical to one that never arrived, which makes setup
+  // impossible to debug from the dashboard alone.
+  stats.lastPostAt = new Date().toISOString();
+  stats.posts += 1;
+
   if (!verifySignature(req)) {
-    log.logWarn('instagram', 'Rejected a webhook POST with a bad or missing signature.');
+    log.logWarn('instagram', 'A webhook POST arrived but its signature did not match IG_APP_SECRET - it was rejected. Check that IG_APP_SECRET is the app secret from App settings > Basic.');
     return res.sendStatus(403);
   }
 
   res.sendStatus(200);
 
   const body = req.body || {};
-  if (body.object !== 'instagram') return;
+  if (body.object !== 'instagram') {
+    log.logInfo('instagram', `Webhook POST received, but for "${body.object || 'nothing'}" rather than instagram - ignored.`);
+    return;
+  }
+
+  const count = (body.entry || []).reduce((n, e) => n + ((e.messaging || []).length), 0);
+  log.logInfo('instagram', `Webhook POST received from Meta with ${count} event(s).`);
 
   // An event arriving proves the webhook works, which covers the case where
   // the URL was verified before this build started recording it. Only write
