@@ -29,18 +29,23 @@ services:
         value: /var/data
       - key: AUTH_DIR
         value: /var/data/auth_info
-      # Instagram DM bot. Leave these unset and the app runs WhatsApp-only,
-      # with the Instagram section showing as "not set up".
-      - key: IG_APP_ID
+      # Instagram DM bot (igramapi - logs in as the account, no Meta app).
+      # Leave these unset and the app runs WhatsApp-only, with the Instagram
+      # section showing as "not set up".
+      - key: IG_USERNAME
         sync: false
-      - key: IG_APP_SECRET
+      - key: IG_PASSWORD
         sync: false
-      - key: IG_ACCESS_TOKEN
+      # Must sit on the persistent disk, or every deploy is a fresh login -
+      # which is what gets an Instagram account checkpointed.
+      - key: IG_SESSION_DIR
+        value: /var/data/ig_session
+      # A residential proxy. Instagram treats logins from Render's IPs as
+      # suspicious; this is the single biggest factor in not getting banned.
+      - key: IG_PROXY
         sync: false
-      - key: IG_ACCOUNT_ID
-        sync: false
-      - key: IG_VERIFY_TOKEN
-        sync: false
+      - key: IG_POLL_SECONDS
+        value: "60"
     disk:
       name: data
       mountPath: /var/data

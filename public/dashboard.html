@@ -419,15 +419,20 @@
 
       <div class="panel">
         <h2>Setup</h2>
-        <p class="lede">Instagram replies run on Meta's official API. Each item below has to be done once.</p>
+        <p class="lede">Instagram replies run by logging in as the account itself — no Meta app and no approval. Each item below has to be done once.</p>
         <div id="igChecklist"></div>
 
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="igReconnectBtn">Reconnect</button>
+          <button class="btn" id="igLogoutBtn">Clear session</button>
+          <span class="saved" id="igConnMsg"></span>
+        </div>
+
         <details class="more">
-          <summary>Where the webhook URL goes</summary>
+          <summary>If Instagram asks for a verification code</summary>
           <div>
-            <p class="note">In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:</p>
-            <p class="note" style="margin-top:8px"><b id="igWebhookUrl">—</b></p>
-            <p class="note" style="margin-top:8px">Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.</p>
+            <p class="note">Instagram challenges a login it does not recognise. It cannot be cleared from here — open Instagram on the phone or browser signed in to this account, approve the login, then press <b>Reconnect</b>.</p>
+            <p class="note" style="margin-top:8px">If it keeps happening, the server's IP is the cause. Set <b>IG_PROXY</b> to a residential proxy.</p>
           </div>
         </details>
       </div>
@@ -455,13 +460,14 @@
       </div>
 
       <div class="panel">
-        <h2>What Instagram allows</h2>
-        <p class="lede">Limits set by Meta, not by this software.</p>
+        <h2>What to know about this method</h2>
+        <p class="lede">Trade-offs of running without Meta's API.</p>
         <ul class="steps">
-          <li>The bot can only reply within 24 hours of someone messaging. It can never message first.</li>
-          <li>Around 200 automated messages per hour, per account.</li>
-          <li>The account must be a professional one — Business or Creator, not personal.</li>
-          <li>Until Meta approves the app, only accounts added as testers can use it.</li>
+          <li>No 24-hour window and no app review — the bot can reply to anyone, any time.</li>
+          <li>Any account type works, personal included.</li>
+          <li>New DMs are picked up by polling, so a reply can lag by up to a minute.</li>
+          <li>Instagram does not permit this, and can restrict or ban the account for it. Keep the sending volume human and never run it on an account that matters without a backup.</li>
+          <li>Logging in from a datacentre IP is the main ban trigger. A residential proxy in <b>IG_PROXY</b> matters more than anything else here.</li>
         </ul>
       </div>
     </section>
@@ -479,8 +485,8 @@
           <tbody>
             <tr><td><b>Telegram</b></td><td>A bot token from BotFather. Nothing else — no review, no approval.</td></tr>
             <tr><td><b>Email</b></td><td>A Gmail app password, or any SMTP login.</td></tr>
-            <tr><td><b>Facebook Messenger</b></td><td>The same Meta app as Instagram, plus the Page.</td></tr>
-            <tr><td><b>Instagram posting</b></td><td>The same Meta app and token already used for DMs.</td></tr>
+            <tr><td><b>Facebook Messenger</b></td><td>A Meta app and the Page it belongs to.</td></tr>
+            <tr><td><b>Instagram posting</b></td><td>The same login already used for DMs — nothing extra.</td></tr>
           </tbody>
         </table>
         <h3>Harder than it looks</h3>
@@ -714,9 +720,10 @@ async function postJson(url, body) {
   return data;
 }
 
-function flash(el, text) {
+function flash(el, text, ms) {
   el.textContent = text;
-  setTimeout(() => { el.textContent = ''; }, 2600);
+  if (el._flashTimer) clearTimeout(el._flashTimer);
+  el._flashTimer = setTimeout(() => { el.textContent = ''; }, ms || 2600);
 }
 
 /* ---------------- navigation ---------------- */
@@ -911,46 +918,52 @@ async function loadInstagram() {
   const help = document.getElementById('igHelp');
   if (!ig.configured) {
     title.textContent = 'Not set up yet';
-    help.textContent = 'Add the Meta app details to the environment variables, then this page will show the connection.';
+    help.textContent = 'Add IG_USERNAME and IG_PASSWORD to the environment variables, then this page will show the connection.';
   } else if (ig.connected) {
     title.textContent = 'Connected';
     help.textContent = 'Answering DMs as @' + (ig.username || 'your account') + '.';
+  } else if (ig.challengeRequired) {
+    title.textContent = 'Verification needed';
+    help.textContent = 'Instagram challenged the login. Approve it in the Instagram app, then press Reconnect.';
   } else {
     title.textContent = 'Not connected';
-    help.textContent = ig.reason || 'The access token was rejected by Meta.';
+    help.textContent = ig.reason || 'The login was rejected by Instagram.';
   }
 
-  const sub = ig.subscription || {};
   const items = [
-    { done: Boolean(ig.accountId), label: 'Instagram professional account linked', detail: ig.accountId ? 'Account ' + ig.accountId : 'Set IG_ACCOUNT_ID' },
     {
-      done: ig.connected === true,
-      label: 'Access token works',
-      detail: ig.connected
-        ? 'Verified with Meta just now · ' + (ig.tokenKind === 'instagram-login' ? 'Instagram login' : 'Unified login') + ' · ' + (ig.graphHost || '')
-        : (ig.reason || 'Set IG_ACCESS_TOKEN'),
+      done: ig.configured === true,
+      label: 'Account login set',
+      detail: ig.configured ? '@' + (ig.username || ig.configuredAs || 'configured') : 'Set IG_USERNAME and IG_PASSWORD',
     },
     {
-      done: sub.hasMessages === true,
-      label: 'Meta will forward real DMs',
-      detail: !sub.ok
-        ? (sub.reason || 'Could not ask Meta.')
-        : (sub.hasMessages
-          ? 'Subscribed to: ' + sub.fields.join(', ')
-          : (sub.fields && sub.fields.length
-            ? 'Subscribed to ' + sub.fields.join(', ') + ' but NOT messages - turn the messages field on in the Meta app.'
-            : 'Meta has no subscription for this account. Real DMs will never arrive. Turn the messages field on in the Meta app, section 3.')),
+      done: ig.loggedIn === true,
+      label: 'Logged in to Instagram',
+      detail: ig.loggedIn
+        ? 'Signed in ' + when(ig.loginAt) + ', session saved'
+        : (ig.challengeRequired ? 'Instagram asked for a verification code' : (ig.reason || ig.lastError || 'Not logged in yet')),
     },
     {
-      done: Boolean(ig.webhookVerifiedAt) || (ig.posts || 0) > 0,
-      label: 'Meta is reaching your server',
-      detail: (ig.posts || 0) > 0
-        ? (ig.posts + ' webhook call(s), last ' + when(ig.lastPostAt))
-        : (ig.webhookVerifiedAt
-          ? 'URL verified ' + when(ig.webhookVerifiedAt) + ', no events yet'
-          : 'No call from Meta yet. Check the messages field is Subscribed in the Meta app.'),
+      done: ig.proxied === true,
+      label: 'Residential proxy in use',
+      detail: ig.proxied
+        ? 'Requests go out through IG_PROXY'
+        : 'Not set. Running straight from the server IP raises the chance of a ban — set IG_PROXY.',
     },
-    { done: (ig.received || 0) > 0, label: 'A DM has come through', detail: (ig.received || 0) > 0 ? ig.received + ' received, ' + (ig.replied || 0) + ' answered' : 'Send a test DM from another account' },
+    {
+      done: (ig.polls || 0) > 0,
+      label: 'Watching the inbox',
+      detail: (ig.polls || 0) > 0
+        ? ig.threadsWatched + ' thread(s), checked every ' + ig.pollSeconds + 's, last ' + when(ig.lastPollAt)
+        : 'No inbox check yet',
+    },
+    {
+      done: (ig.received || 0) > 0,
+      label: 'A DM has come through',
+      detail: (ig.received || 0) > 0
+        ? ig.received + ' received, ' + (ig.replied || 0) + ' answered'
+        : 'Send a test DM from another account',
+    },
   ];
 
   document.getElementById('igChecklist').innerHTML =
@@ -959,8 +972,6 @@ async function loadInstagram() {
         <td style="width:28px"><span class="dot ${i.done ? 'live' : 'stop'}"></span></td>
         <td><b>${esc(i.label)}</b><br><span class="note">${esc(i.detail)}</span></td>
       </tr>`).join('') + '</tbody></table>';
-
-  document.getElementById('igWebhookUrl').textContent = window.location.origin + '/webhook/instagram';
 
   if (ig.lastError) {
     const h = document.getElementById('igHelp');
@@ -980,6 +991,34 @@ document.getElementById('igSaveBtn').addEventListener('click', async (e) => {
     flash(document.getElementById('igSaved'), 'Saved');
   } catch (err) {
     flash(document.getElementById('igSaved'), err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+document.getElementById('igReconnectBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  flash(document.getElementById('igConnMsg'), 'Logging in…', 20000);
+  try {
+    const r = await postJson('/api/instagram/reconnect', {});
+    flash(document.getElementById('igConnMsg'), r && r.ok ? 'Connected' : (r && r.reason) || 'Could not connect');
+    await loadInstagram();
+  } catch (err) {
+    flash(document.getElementById('igConnMsg'), err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+document.getElementById('igLogoutBtn').addEventListener('click', async (e) => {
+  if (!confirm('Clear the saved Instagram session? The next reconnect will log in from scratch, which Instagram is more likely to challenge.')) return;
+  e.target.disabled = true;
+  try {
+    await postJson('/api/instagram/logout', {});
+    flash(document.getElementById('igConnMsg'), 'Session cleared');
+    await loadInstagram();
+  } catch (err) {
+    flash(document.getElementById('igConnMsg'), err.message);
   } finally {
     e.target.disabled = false;
   }

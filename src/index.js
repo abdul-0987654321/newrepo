@@ -63,11 +63,7 @@ async function main() {
 
   const app = express();
   app.set('trust proxy', 1); // Render terminates HTTPS in front of us
-  // Keep the raw body around - Meta signs its webhook payloads and the
-  // signature only matches against the exact bytes they sent.
-  app.use(express.json({
-    verify: (req, res, buf) => { req.rawBody = buf; },
-  }));
+  app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/', (req, res) => res.redirect('/dashboard'));
@@ -85,14 +81,9 @@ async function main() {
     });
   });
 
-  /* ------------------------- Instagram webhook -------------------------
-   * These two MUST stay public and unauthenticated - Meta's servers call
-   * them, and they have no dashboard cookie. The POST is protected instead
-   * by the app-secret signature check inside instagram.js.
-   */
-
-  app.get('/webhook/instagram', (req, res) => instagram.handleVerification(req, res));
-  app.post('/webhook/instagram', (req, res) => instagram.handleWebhook(req, res));
+  /* The Instagram bot no longer needs a public webhook: igramapi logs in as
+   * the account and polls the inbox itself, so there is nothing for Meta to
+   * call back into. */
 
   app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
@@ -261,16 +252,13 @@ async function main() {
   /* ------------------------- Instagram (dashboard side) ------------------------- */
 
   app.get('/api/instagram/status', requireDashboardAuth, async (req, res) => {
-    const [live, subscription] = await Promise.all([
-      instagram.checkConnection(),
-      instagram.checkSubscription(),
-    ]);
-    res.json({ ...instagram.getStatusPayload(), ...live, subscription });
+    const live = await instagram.checkConnection();
+    res.json({ ...instagram.getStatusPayload(), ...live });
   });
 
-  // Sends a DM by hand from the dashboard. Only works inside the 24-hour
-  // window - the error from Meta is passed straight through so the reason
-  // is visible instead of a generic failure.
+  // Sends a DM by hand from the dashboard. There is no 24-hour window any
+  // more, but the account can still be rate-limited, so the real error is
+  // passed straight through instead of a generic failure.
   app.post('/api/instagram/send', requireDashboardAuth, async (req, res) => {
     try {
       await instagram.sendManualMessage(req.body.to, req.body.text);
@@ -279,6 +267,22 @@ async function main() {
       log.logError('instagram', err, 'Manual Instagram message failed');
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Forces a fresh login - what to press after clearing a checkpoint in the
+  // Instagram app, or after changing the password.
+  app.post('/api/instagram/reconnect', requireDashboardAuth, async (req, res) => {
+    try {
+      res.json(await instagram.reconnect());
+    } catch (err) {
+      log.logError('instagram', err, 'Instagram reconnect failed');
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Throws the stored session away. The next reconnect logs in from scratch.
+  app.post('/api/instagram/logout', requireDashboardAuth, (req, res) => {
+    res.json(instagram.logout());
   });
 
   /* ------------------------- Error log ------------------------- */
@@ -313,6 +317,12 @@ async function main() {
   await authStore.load();
   await startWhatsApp();
   startFollowupScheduler();
+
+  // Instagram last, and never awaited into a throw: a login problem on the
+  // Instagram side must not take WhatsApp down with it.
+  void instagram.start().catch((err) => {
+    log.logError('instagram', err, 'Starting the Instagram DM bot failed');
+  });
 }
 
 /**
@@ -330,6 +340,7 @@ function installShutdownHandler(server) {
     const hardExit = setTimeout(() => process.exit(0), 25000);
     try {
       server.close();
+      instagram.stop();
       await stopWhatsApp();
       const drained = await sheets.drain(15000);
       if (!drained) log.logWarn('process', 'Some Sheet updates were still queued at shutdown and may be missing.');

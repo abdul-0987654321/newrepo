@@ -23,17 +23,21 @@ const config = {
     password: process.env.DASHBOARD_PASSWORD || 'dash123',
   },
 
-  // Instagram DM bot (Meta's official Instagram API). Optional - if these are
-  // unset the app runs exactly as before, with the Instagram section showing
-  // as "not configured" on the dashboard instead of failing to boot.
+  // Instagram DM bot (igramapi - unofficial, no Meta app). Optional: if these
+  // are unset the app runs exactly as before, with the Instagram section
+  // showing as "not configured" on the dashboard instead of failing to boot.
   instagram: {
-    appId: process.env.IG_APP_ID || '',
-    appSecret: process.env.IG_APP_SECRET || '',
-    accessToken: process.env.IG_ACCESS_TOKEN || '',
-    accountId: process.env.IG_ACCOUNT_ID || '',
-    // We invent this one; it just has to match what you type into Meta's
-    // "Verify token" box when saving the callback URL.
-    verifyToken: process.env.IG_VERIFY_TOKEN || '',
+    username: process.env.IG_USERNAME || '',
+    password: process.env.IG_PASSWORD || '',
+    // Where the logged-in session is stored. On Render this MUST point at the
+    // persistent disk - a fresh login on every deploy is what gets an account
+    // checkpointed. e.g. /var/data/ig
+    sessionDir: process.env.IG_SESSION_DIR || 'ig_session',
+    // Strongly recommended. Instagram treats logins from datacentre IPs
+    // (Render, AWS) as suspicious; a residential proxy is the difference
+    // between a bot that runs for months and one banned in a week.
+    // Format: http://user:pass@host:port
+    proxyUrl: process.env.IG_PROXY || '',
   },
 
   business: {

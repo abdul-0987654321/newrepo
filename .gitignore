@@ -4,4 +4,5 @@ node_modules/
 # customer chats or the WhatsApp login.
 data/
 auth_info/
+ig_session/
 *.log

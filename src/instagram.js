@@ -1,70 +1,79 @@
 'use strict';
 /**
- * instagram.js - Instagram Direct Message bot via Meta's official Instagram API.
+ * instagram.js - Instagram Direct Message bot via igramapi (unofficial).
+ *
+ * This replaces the previous Meta Graph API build. No Meta app, no app review,
+ * no 24-hour messaging window - we log in as the account itself, the same way
+ * the phone app does.
  *
  * Flow:
- *   Instagram DM -> Meta webhook -> POST /webhook/instagram -> AI reply -> Graph Send API
+ *   login (username/password) -> poll the direct inbox -> AI reply -> send DM
  *
- * Meta's rules that are enforced here (not optional - breaking them gets the
- * app rejected or the account limited):
- *   - We can only reply INSIDE the 24-hour window that opens when the user
- *     messages us. We never send the first message.
- *   - Every webhook payload is signature-checked against the app secret.
- *   - Echo events (our own sent messages coming back) are ignored.
+ * What this costs us, compared with the official API:
+ *   - Instagram can flag or ban the account. Logging in from a datacentre IP
+ *     (Render) is the single biggest trigger, so IG_PROXY exists below.
+ *   - There is no webhook. We poll, so replies lag by up to one poll interval.
+ *   - The session has to be reused. Logging in fresh on every boot is what
+ *     gets accounts checkpointed, so the serialized state is written to disk
+ *     and restored before any request is made.
  *
  * Conversation state is kept in store.js exactly like WhatsApp leads, keyed
- * as "ig:<instagram-scoped-user-id>" so one dashboard shows both channels.
+ * as "ig:<instagram-user-pk>" so one dashboard shows both channels.
  */
 
-const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const OpenAI = require('openai');
+const { IgApiClient } = require('igramapi');
 const config = require('./config');
 const log = require('./errors');
 const store = require('./store');
 
-const GRAPH_VERSION = 'v23.0';
+/**
+ * How often we ask Instagram for the inbox. Instagram does not publish a
+ * limit, but polling hard from one IP is what gets an account rate-limited,
+ * so this is deliberately slow and jittered - two bots on the same host do
+ * not line up and hit the API in the same second.
+ */
+const POLL_INTERVAL_MS = Number(process.env.IG_POLL_SECONDS || 60) * 1000;
+const POLL_JITTER_MS = 15 * 1000;
+
+/** Never reply to a DM older than this, so a backlog is not answered at once. */
+const MAX_REPLY_AGE_MS = 6 * 60 * 60 * 1000;
+
+/** Instagram returns direct-message timestamps in MICROseconds. */
+function itemTimeMs(item) {
+  const raw = Number(item.timestamp || 0);
+  if (!raw) return 0;
+  return raw > 1e14 ? Math.round(raw / 1000) : raw;
+}
+
+let ig = null;
+let selfPk = null;
+let pollTimer = null;
+let polling = false;
 
 /**
- * The host has to match the KIND of token, or Meta answers "Cannot parse
- * access token" even though the token is perfectly valid:
- *   - "IGAA..." comes from API setup with Instagram login -> graph.instagram.com
- *   - "EAA..."/"EAG..." comes from Unified login or Facebook login
- *     -> graph.facebook.com
- * Newer Meta apps only offer Unified login, so EAA is the common case.
+ * Newest message we have already dealt with, per thread. Seeded on the first
+ * poll after boot so the bot does not wake up and answer every old DM in the
+ * inbox - it only ever replies to messages that arrive while it is running.
  */
-function graphBase() {
-  const token = String(config.instagram.accessToken || '');
-  const host = token.startsWith('IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
-  return `https://${host}/${GRAPH_VERSION}`;
-}
-
-/** Which login the token came from, for the dashboard's setup checklist. */
-function tokenKind() {
-  const token = String(config.instagram.accessToken || '');
-  if (!token) return 'missing';
-  if (token.startsWith('IGAA')) return 'instagram-login';
-  if (token.startsWith('EAA') || token.startsWith('EAG')) return 'unified-login';
-  return 'unrecognised';
-}
-
-// Meta's hard limit: no normal DM outside 24h of the user's last message.
-const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-// Meta can retry the same webhook delivery. Replying twice to one DM looks
-// broken to the customer, so remember recent message ids.
-const SEEN_MESSAGE_IDS = new Map();
-const SEEN_TTL_MS = 10 * 60 * 1000;
+const lastSeenByThread = new Map();
+let seeded = false;
 
 const stats = {
-  posts: 0,          // raw webhook POSTs from Meta, before any filtering
-  lastPostAt: null,
+  loggedIn: false,
+  username: null,
+  loginAt: null,
+  polls: 0,
+  lastPollAt: null,
   received: 0,
   replied: 0,
-  skippedOutsideWindow: 0,
+  skippedOld: 0,
   failed: 0,
   lastEventAt: null,
   lastError: null,
-  webhookVerifiedAt: null,
+  challengeRequired: false,
 };
 
 let openaiClient = null;
@@ -74,223 +83,238 @@ function ai() {
 }
 
 function isConfigured() {
-  return Boolean(config.instagram.accessToken && config.instagram.accountId);
+  return Boolean(config.instagram.username && config.instagram.password);
 }
 
-function rememberMessageId(id) {
-  const now = Date.now();
-  for (const [key, seenAt] of SEEN_MESSAGE_IDS) {
-    if (now - seenAt > SEEN_TTL_MS) SEEN_MESSAGE_IDS.delete(key);
-  }
-  if (SEEN_MESSAGE_IDS.has(id)) return false;
-  SEEN_MESSAGE_IDS.set(id, now);
-  return true;
-}
+/* ------------------------- Session persistence ------------------------- */
 
-/* ------------------------- Webhook verification ------------------------- */
+function sessionFile() {
+  return path.join(config.instagram.sessionDir, 'ig-session.json');
+}
 
 /**
- * Meta verifies a callback URL ONCE, when you save it - not on every boot.
- * So this has to outlive the process, or the dashboard would claim the
- * webhook was never set up after each redeploy. It goes in settings, which
- * are mirrored to the Google Sheet and restored on a fresh disk.
+ * Written after every request. Instagram ties a session to a device
+ * fingerprint, so losing this file means a fresh login - and a string of
+ * fresh logins from a server IP is exactly what triggers a checkpoint.
+ * On Render this must point at the persistent disk, not the container.
  */
-function markWebhookSeen() {
-  const now = new Date().toISOString();
-  stats.webhookVerifiedAt = now;
+async function saveSession() {
   try {
-    store.updateSettings({ igWebhookVerifiedAt: now });
+    const serialized = await ig.state.serialize();
+    // The library's own constant set should win on upgrade, not a stale copy.
+    delete serialized.constants;
+    fs.mkdirSync(config.instagram.sessionDir, { recursive: true });
+    fs.writeFileSync(sessionFile(), JSON.stringify(serialized), 'utf8');
   } catch (err) {
-    log.logWarn('instagram', `Could not record the webhook verification: ${err.message}`);
+    log.logWarn('instagram', `Could not save the Instagram session: ${err.message}`);
   }
 }
 
-function webhookVerifiedAt() {
-  if (stats.webhookVerifiedAt) return stats.webhookVerifiedAt;
+function loadSession() {
   try {
-    return store.getSettings().igWebhookVerifiedAt || null;
+    if (!fs.existsSync(sessionFile())) return null;
+    return JSON.parse(fs.readFileSync(sessionFile(), 'utf8'));
   } catch (err) {
+    log.logWarn('instagram', `Could not read the saved Instagram session: ${err.message}`);
     return null;
   }
 }
 
-/**
- * GET /webhook/instagram
- * Meta calls this once when you save the callback URL. It must echo back
- * hub.challenge as PLAIN TEXT, or the URL is rejected.
- */
-function handleVerification(req, res) {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === config.instagram.verifyToken) {
-    markWebhookSeen();
-    log.logInfo('instagram', 'Webhook verified by Meta.');
-    return res.status(200).type('text/plain').send(challenge);
-  }
-
-  log.logWarn('instagram', 'Webhook verification failed - the verify token did not match IG_VERIFY_TOKEN.');
-  return res.sendStatus(403);
-}
-
-/**
- * Meta signs every POST with the app secret. Without this check anyone who
- * learns the URL could feed fake messages into the bot.
- */
-function verifySignature(req) {
-  if (!config.instagram.appSecret) {
-    log.logWarn('instagram', 'IG_APP_SECRET is not set - webhook payloads are NOT signature-checked.');
-    return true;
-  }
-  const header = req.get('x-hub-signature-256') || '';
-  if (!header.startsWith('sha256=') || !req.rawBody) return false;
-
-  const expected = `sha256=${crypto
-    .createHmac('sha256', config.instagram.appSecret)
-    .update(req.rawBody)
-    .digest('hex')}`;
-
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-/* ------------------------- Incoming messages ------------------------- */
-
-/**
- * POST /webhook/instagram
- * Answer 200 immediately - Meta retries (and eventually disables the
- * webhook) if we take too long - then process in the background.
- */
-function handleWebhook(req, res) {
-  // Log the arrival BEFORE anything can reject it. Without this, a webhook
-  // that was received but then dropped (wrong signature, unexpected shape)
-  // looks identical to one that never arrived, which makes setup
-  // impossible to debug from the dashboard alone.
-  stats.lastPostAt = new Date().toISOString();
-  stats.posts += 1;
-
-  if (!verifySignature(req)) {
-    log.logWarn('instagram', 'A webhook POST arrived but its signature did not match IG_APP_SECRET - it was rejected. Check that IG_APP_SECRET is the app secret from App settings > Basic.');
-    return res.sendStatus(403);
-  }
-
-  res.sendStatus(200);
-
-  const body = req.body || {};
-  if (body.object !== 'instagram') {
-    log.logInfo('instagram', `Webhook POST received, but for "${body.object || 'nothing'}" rather than instagram - ignored.`);
-    return;
-  }
-
-  const events = extractEvents(body);
-  log.logInfo('instagram', `Webhook POST received from Meta with ${events.length} event(s).`);
-
-  // With nothing to act on, record the shape rather than the content: it is
-  // the only way to tell a harmless test ping from a payload we failed to
-  // understand, and it keeps message text out of the log.
-  if (!events.length) {
-    log.logInfo('instagram', `No message events in that POST. Shape: ${describeShape(body)}`);
-  }
-
-  // An event arriving proves the webhook works, which covers the case where
-  // the URL was verified before this build started recording it. Only write
-  // when it is not already known, so this does not hit the Sheet per message.
-  if (!webhookVerifiedAt()) markWebhookSeen();
-
-  for (const event of events) {
-    void processEvent(event).catch((err) => {
-      stats.failed += 1;
-      stats.lastError = err.message;
-      log.logError('instagram', err, 'Processing an Instagram event failed');
-    });
+function clearSession() {
+  try {
+    if (fs.existsSync(sessionFile())) fs.unlinkSync(sessionFile());
+  } catch (err) {
+    log.logWarn('instagram', `Could not clear the Instagram session: ${err.message}`);
   }
 }
 
+/* ------------------------- Login ------------------------- */
+
 /**
- * Meta does not deliver Instagram DMs in one single shape. The documented
- * one is entry[].messaging[], but installs have been seen receiving them as
- * entry[].changes[] with field "messages" instead, and the value there is
- * sometimes a Cloud-API style { messages: [...] } array. Accepting all three
- * costs nothing and avoids a silent do-nothing bot if Meta routes a given
- * app the other way.
+ * Logs in, reusing the saved session when there is one. Returns false rather
+ * than throwing, so a bad Instagram password cannot stop the whole app (and
+ * WhatsApp with it) from booting.
  */
-function extractEvents(body) {
-  const events = [];
+async function login() {
+  if (!isConfigured()) {
+    log.logInfo('instagram', 'Instagram is not configured - set IG_USERNAME and IG_PASSWORD to turn the DM bot on.');
+    return false;
+  }
 
-  for (const entry of body.entry || []) {
-    // Shape 1: the documented Messenger-style envelope.
-    for (const event of entry.messaging || []) events.push(event);
+  ig = new IgApiClient();
 
-    for (const change of entry.changes || []) {
-      if (change.field !== 'messages') continue;
-      const value = change.value || {};
+  // The device fingerprint is derived from the username, so it stays the
+  // same across restarts - a changing device looks like a new phone to
+  // Instagram and invites a verification challenge.
+  ig.state.generateDevice(config.instagram.username);
+  if (config.instagram.proxyUrl) ig.state.proxyUrl = config.instagram.proxyUrl;
 
-      // Shape 2: the same event body, wrapped in a change.
-      if (value.sender || value.message) {
-        events.push(value);
-        continue;
-      }
+  // Persist state after every request, as the library intends.
+  ig.request.end$.subscribe(() => {
+    void saveSession();
+  });
 
-      // Shape 3: Cloud-API style array of messages.
-      for (const msg of value.messages || []) {
-        events.push({
-          sender: { id: msg.from || (value.contacts && value.contacts[0] && value.contacts[0].wa_id) },
-          timestamp: msg.timestamp ? Number(msg.timestamp) * 1000 : Date.now(),
-          message: {
-            mid: msg.id,
-            text: msg.text ? msg.text.body : '',
-          },
-        });
-      }
+  const saved = loadSession();
+  if (saved) {
+    try {
+      await ig.state.deserialize(saved);
+      log.logInfo('instagram', 'Restored the saved Instagram session.');
+    } catch (err) {
+      log.logWarn('instagram', `The saved session was unusable, logging in fresh: ${err.message}`);
     }
   }
 
-  return events;
+  try {
+    // With a restored session this usually resolves without a real login
+    // round-trip; currentUser() is the cheapest way to find out whether the
+    // session is still good.
+    let me = null;
+    if (saved) {
+      try {
+        me = await ig.account.currentUser();
+      } catch (err) {
+        log.logInfo('instagram', 'The saved session has expired - logging in again.');
+      }
+    }
+
+    if (!me) {
+      await ig.account.login(config.instagram.username, config.instagram.password);
+      me = await ig.account.currentUser();
+    }
+
+    selfPk = String(me.pk);
+    stats.loggedIn = true;
+    stats.username = me.username;
+    stats.loginAt = new Date().toISOString();
+    stats.challengeRequired = false;
+    stats.lastError = null;
+    log.logInfo('instagram', `Logged in to Instagram as @${me.username}.`);
+    return true;
+  } catch (err) {
+    stats.loggedIn = false;
+    stats.lastError = err.message;
+
+    // A checkpoint cannot be cleared from here - it needs the code Instagram
+    // emailed or texted, entered in the app. Say so plainly instead of
+    // retrying in a loop, which only makes the flag worse.
+    const name = (err && err.name) || '';
+    if (name.includes('Checkpoint') || name.includes('Challenge')) {
+      stats.challengeRequired = true;
+      clearSession();
+      log.logError('instagram', err, 'Instagram asked for a verification challenge. Open Instagram on the phone or browser for this account, approve the login, then restart the service. A residential IG_PROXY makes this far less likely.');
+      return false;
+    }
+
+    if (name.includes('BadPassword') || name.includes('LoginRequired')) {
+      clearSession();
+    }
+
+    log.logError('instagram', err, 'Instagram login failed');
+    return false;
+  }
 }
 
-/** Keys only - never values, so no message text reaches the log. */
-function describeShape(body) {
-  const entries = body.entry || [];
-  if (!entries.length) return 'entry: []';
-  return entries
-    .map((e) => {
-      const parts = Object.keys(e).filter((k) => k !== 'id' && k !== 'time');
-      const changes = (e.changes || []).map((c) => `field=${c.field}`).join(',');
-      return parts.length ? `entry{${parts.join(',')}}${changes ? ` [${changes}]` : ''}` : 'entry{id,time only}';
-    })
-    .join(' | ');
+/* ------------------------- Inbox polling ------------------------- */
+
+/**
+ * One pass over the direct inbox. Only the first page is read - a reply that
+ * matters is always on the first page, and paging the whole inbox every
+ * minute is a reliable way to get rate-limited.
+ */
+async function pollOnce() {
+  if (!stats.loggedIn || polling) return;
+  polling = true;
+  stats.polls += 1;
+  stats.lastPollAt = new Date().toISOString();
+
+  try {
+    const inbox = ig.feed.directInbox();
+    const threads = await inbox.items();
+
+    // First pass after boot: note where every thread stands and answer
+    // nothing. Without this the bot replies to the entire existing inbox the
+    // moment it starts.
+    if (!seeded) {
+      for (const thread of threads) {
+        const newest = (thread.items || [])[0];
+        lastSeenByThread.set(thread.thread_id, newest ? itemTimeMs(newest) : 0);
+      }
+      seeded = true;
+      log.logInfo('instagram', `Watching ${threads.length} Instagram thread(s). Only new messages from here on will be answered.`);
+      return;
+    }
+
+    for (const thread of threads) {
+      await handleThread(thread).catch((err) => {
+        stats.failed += 1;
+        stats.lastError = err.message;
+        log.logError('instagram', err, `Handling Instagram thread ${thread.thread_id} failed`);
+      });
+    }
+  } catch (err) {
+    stats.failed += 1;
+    stats.lastError = err.message;
+
+    // A session can die mid-run (password change, Instagram logging us out).
+    const name = (err && err.name) || '';
+    if (name.includes('LoginRequired') || name.includes('Checkpoint') || name.includes('Challenge')) {
+      stats.loggedIn = false;
+      log.logError('instagram', err, 'The Instagram session was rejected. Reconnect from the dashboard once the account is clear.');
+    } else {
+      log.logError('instagram', err, 'Reading the Instagram inbox failed');
+    }
+  } finally {
+    polling = false;
+  }
 }
 
-async function processEvent(event) {
-  const senderId = event.sender && event.sender.id;
-  const message = event.message;
-  if (!senderId || !message) return;
+async function handleThread(thread) {
+  const items = thread.items || [];
+  if (!items.length) return;
 
-  // Our own outgoing messages are echoed back to us - never reply to those.
-  if (message.is_echo) return;
+  const since = lastSeenByThread.get(thread.thread_id) || 0;
 
-  // The account itself appearing as sender means an echo we did not tag.
-  if (String(senderId) === String(config.instagram.accountId)) return;
+  // Oldest first, so a burst of messages is logged in the order it was sent.
+  const fresh = items
+    .filter((item) => itemTimeMs(item) > since)
+    .filter((item) => String(item.user_id) !== selfPk)
+    .sort((a, b) => itemTimeMs(a) - itemTimeMs(b));
 
-  const messageId = message.mid;
-  if (messageId && !rememberMessageId(messageId)) return;
+  // Move the marker even when nothing is answerable, or an unsupported item
+  // (a reel share, a reaction) would be re-examined on every single poll.
+  const newest = items.reduce((max, item) => Math.max(max, itemTimeMs(item)), since);
+  lastSeenByThread.set(thread.thread_id, newest);
 
-  const text = (message.text || '').trim();
-  stats.received += 1;
-  stats.lastEventAt = new Date().toISOString();
+  if (!fresh.length) return;
 
-  const leadKey = `ig:${senderId}`;
+  // A thread can hold several people; a group DM is not a lead.
+  const users = thread.users || [];
+  if (users.length !== 1) return;
 
-  // Attachments (photo, reel share, voice note) arrive with no text.
-  if (!text) {
-    store.logMessage(leadKey, 'user', '[attachment]');
-    return;
+  const senderPk = String(users[0].pk);
+  const leadKey = `ig:${senderPk}`;
+
+  let latestText = null;
+  for (const item of fresh) {
+    stats.received += 1;
+    stats.lastEventAt = new Date().toISOString();
+
+    if (item.item_type === 'text' && item.text) {
+      latestText = item.text.trim();
+      store.upsertLead(leadKey, {
+        source: 'instagram',
+        name: users[0].full_name || users[0].username || undefined,
+        lastContacted: new Date().toISOString(),
+      });
+      store.logMessage(leadKey, 'user', latestText);
+    } else {
+      // Photos, reels, voice notes, likes: recorded so the inbox reads
+      // correctly, but there is nothing for the model to answer.
+      store.logMessage(leadKey, 'user', `[${item.item_type || 'attachment'}]`);
+    }
   }
 
-  store.upsertLead(leadKey, { source: 'instagram', lastContacted: new Date().toISOString() });
-  store.logMessage(leadKey, 'user', text);
+  if (!latestText) return;
 
   const settings = store.getSettings();
   if (settings.igBotEnabled === false) return;
@@ -298,28 +322,18 @@ async function processEvent(event) {
   const lead = store.getLead(leadKey);
   if (lead && lead.humanTakeover === true) return;
 
-  // 24-hour window: the event we just received reopened it, so a reply to
-  // THIS message is always allowed. The guard matters for queued/retried
-  // deliveries that reach us late.
-  const eventTime = event.timestamp ? Number(event.timestamp) : Date.now();
-  if (Date.now() - eventTime > MESSAGING_WINDOW_MS) {
-    stats.skippedOutsideWindow += 1;
-    // Meta's "Test" button in the webhook table sends a canned payload with
-    // a years-old timestamp, which lands here and reads like a real problem.
-    // Say which it is, or setup looks broken when it is working.
-    const ageDays = Math.round((Date.now() - eventTime) / 86400000);
-    if (ageDays > 7) {
-      log.logInfo('instagram', `Ignored a sample payload (sender ${senderId}, dated ${ageDays} days ago). This is Meta's Test button, not a real DM - send an actual message to test properly.`);
-    } else {
-      log.logWarn('instagram', `Skipped a reply to ${senderId} - the 24-hour messaging window had closed.`);
-    }
+  // Guard against a poll that catches up after a long outage.
+  const age = Date.now() - itemTimeMs(fresh[fresh.length - 1]);
+  if (age > MAX_REPLY_AGE_MS) {
+    stats.skippedOld += 1;
+    log.logWarn('instagram', `Skipped a reply to ${senderPk} - the message is ${Math.round(age / 3600000)}h old.`);
     return;
   }
 
-  const reply = await generateReply(leadKey, text);
+  const reply = await generateReply(leadKey, latestText);
   if (!reply) return;
 
-  await sendMessage(senderId, reply);
+  await sendToThread(thread.thread_id, reply);
   store.logMessage(leadKey, 'assistant', reply);
   stats.replied += 1;
 }
@@ -392,112 +406,95 @@ async function generateReply(leadKey, text) {
 
 /* ------------------------- Sending ------------------------- */
 
-/**
- * Sends a DM through the Instagram Send API. Only valid inside the 24-hour
- * window - Meta returns error code 10 / subcode 2534022 once it has closed.
- */
-async function sendMessage(recipientId, text) {
-  if (!isConfigured()) {
-    throw new Error('Instagram is not configured - set IG_ACCESS_TOKEN and IG_ACCOUNT_ID.');
-  }
-
-  const url = `${graphBase()}/${config.instagram.accountId}/messages`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.instagram.accessToken}`,
-    },
-    body: JSON.stringify({
-      recipient: { id: String(recipientId) },
-      message: { text: String(text).slice(0, 1000) },
-    }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = payload.error || {};
-    stats.failed += 1;
-    stats.lastError = error.message || `HTTP ${response.status}`;
-    throw new Error(
-      `Instagram send failed (${response.status}): ${error.message || 'unknown error'}` +
-        (error.code ? ` [code ${error.code}${error.error_subcode ? `/${error.error_subcode}` : ''}]` : '')
-    );
-  }
-  return payload;
+/** Sends into an existing thread, which is the normal case for a reply. */
+async function sendToThread(threadId, text) {
+  if (!stats.loggedIn) throw new Error('Instagram is not logged in.');
+  return ig.entity.directThread(String(threadId)).broadcastText(String(text).slice(0, 1000));
 }
 
-/**
- * Asks Meta which webhook fields IT thinks this app is subscribed to for
- * this account. The toggles in Meta's console are easy to misread and a
- * subscription can go stale, so this is the only way to know for certain
- * whether a real DM would ever be forwarded. An empty list is the answer
- * to "Meta reaches my server for Test payloads but never for real DMs".
- */
-async function checkSubscription() {
-  if (!isConfigured()) {
-    return { ok: false, reason: 'Instagram is not configured yet.' };
-  }
-  try {
-    const url = `${graphBase()}/${config.instagram.accountId}/subscribed_apps`;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${config.instagram.accessToken}` },
-    });
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        reason: (payload.error && payload.error.message) || `HTTP ${response.status}`,
-      };
-    }
-
-    const apps = payload.data || [];
-    const fields = apps.flatMap((a) => a.subscribed_fields || []);
-    return {
-      ok: true,
-      apps: apps.length,
-      fields,
-      hasMessages: fields.includes('messages'),
-    };
-  } catch (err) {
-    return { ok: false, reason: err.message };
-  }
+/** Sends to a user by their numeric id, opening a thread if there is none. */
+async function sendMessage(userPk, text) {
+  if (!stats.loggedIn) throw new Error('Instagram is not logged in.');
+  return ig.entity.directThread([String(userPk)]).broadcastText(String(text).slice(0, 1000));
 }
 
 /** Used by the dashboard's manual-reply box. */
 async function sendManualMessage(leadKey, text) {
-  const senderId = String(leadKey).replace(/^ig:/, '');
-  await sendMessage(senderId, text);
-  store.logMessage(`ig:${senderId}`, 'human', text);
+  const userPk = String(leadKey).replace(/^ig:/, '');
+  await sendMessage(userPk, text);
+  store.logMessage(`ig:${userPk}`, 'human', text);
+  return { ok: true };
+}
+
+/* ------------------------- Lifecycle ------------------------- */
+
+function scheduleNextPoll() {
+  if (pollTimer) clearTimeout(pollTimer);
+  const wait = POLL_INTERVAL_MS + Math.floor(Math.random() * POLL_JITTER_MS);
+  pollTimer = setTimeout(() => {
+    void pollOnce().finally(scheduleNextPoll);
+  }, wait);
+  // Do not hold the process open purely for the poll timer.
+  if (pollTimer.unref) pollTimer.unref();
+}
+
+/** Called once at boot. Never throws - Instagram being down must not stop WhatsApp. */
+async function start() {
+  if (!isConfigured()) return false;
+  const ok = await login();
+  if (!ok) return false;
+  await pollOnce();          // seeds the thread markers
+  scheduleNextPoll();
+  log.logInfo('instagram', `Polling Instagram DMs every ${Math.round(POLL_INTERVAL_MS / 1000)}s.`);
+  return true;
+}
+
+function stop() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+/** Dashboard "Reconnect" - forces a fresh login and re-seeds the markers. */
+async function reconnect() {
+  stop();
+  seeded = false;
+  lastSeenByThread.clear();
+  const ok = await start();
+  return { ok, reason: ok ? null : stats.lastError };
+}
+
+/** Wipes the stored session so the next login starts clean. */
+function logout() {
+  stop();
+  clearSession();
+  stats.loggedIn = false;
+  stats.username = null;
+  seeded = false;
+  lastSeenByThread.clear();
   return { ok: true };
 }
 
 /* ------------------------- Status ------------------------- */
 
-/** Confirms the token actually works, so the dashboard can show a real state. */
+/** Confirms the session actually works, so the dashboard shows a real state. */
 async function checkConnection() {
   if (!isConfigured()) {
-    return { connected: false, reason: 'Not configured - IG_ACCESS_TOKEN or IG_ACCOUNT_ID is missing.' };
+    return { connected: false, reason: 'Not configured - IG_USERNAME or IG_PASSWORD is missing.' };
+  }
+  if (!stats.loggedIn) {
+    return {
+      connected: false,
+      reason: stats.challengeRequired
+        ? 'Instagram asked for a verification challenge. Approve the login in the Instagram app, then reconnect.'
+        : (stats.lastError || 'Not logged in.'),
+    };
   }
   try {
-    // graph.facebook.com/me on a Unified-login token resolves to the user,
-    // not the Instagram account, so ask for the account by its id instead.
-    const path = tokenKind() === 'instagram-login' ? 'me' : String(config.instagram.accountId);
-    const url = `${graphBase()}/${path}?fields=id,username`;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${config.instagram.accessToken}` },
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      let reason = (payload.error && payload.error.message) || `HTTP ${response.status}`;
-      if (tokenKind() === 'unrecognised') {
-        reason += ' - the token does not start with IGAA, EAA or EAG, so it looks truncated or is not an access token.';
-      }
-      return { connected: false, reason, tokenKind: tokenKind() };
-    }
-    return { connected: true, username: payload.username, id: payload.id, tokenKind: tokenKind() };
+    const me = await ig.account.currentUser();
+    return { connected: true, username: me.username, id: String(me.pk) };
   } catch (err) {
+    stats.loggedIn = false;
+    stats.lastError = err.message;
     return { connected: false, reason: err.message };
   }
 }
@@ -505,21 +502,23 @@ async function checkConnection() {
 function getStatusPayload() {
   return {
     configured: isConfigured(),
-    accountId: config.instagram.accountId || null,
-    tokenKind: tokenKind(),
-    graphHost: graphBase().replace('https://', '').split('/')[0],
+    mode: 'unofficial',
+    library: 'igramapi',
+    pollSeconds: Math.round(POLL_INTERVAL_MS / 1000),
+    proxied: Boolean(config.instagram.proxyUrl),
+    threadsWatched: lastSeenByThread.size,
     ...stats,
-    webhookVerifiedAt: webhookVerifiedAt(),
   };
 }
 
 module.exports = {
-  handleVerification,
-  handleWebhook,
+  start,
+  stop,
+  reconnect,
+  logout,
   sendMessage,
   sendManualMessage,
   checkConnection,
-  checkSubscription,
   getStatusPayload,
   isConfigured,
   DEFAULT_PROMPT,

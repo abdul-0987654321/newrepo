@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@itsliaaa/baileys": "^0.3.18",
+    "igramapi": "^1.48.3",
+    "re2": "^1.21.4",
     "link-preview-js": "^3.0.5",
     "qrcode": "^1.5.3",
     "pino": "^9.3.2",
