@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KSC Carpets - Login</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; background: #f5f4f0; margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #fff; border-radius: 12px; padding: 32px 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); width: 280px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p { font-size: 13px; color: #666; margin: 0 0 20px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+  button { width: 100%; padding: 10px; border: none; background: #222; color: #fff; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  .error { color: #a5342f; font-size: 12px; margin: -6px 0 12px; display: none; }
+  .error.show { display: block; }
+</style>
+</head>
+<body>
+  <form class="card" method="POST" action="/login">
+    <h1>KSC Carpets</h1>
+    <p>Enter the dashboard password to continue.</p>
+    <div class="error" id="err">Wrong password - try again.</div>
+    <input type="password" name="password" placeholder="Password" autofocus required>
+    <button type="submit">Log in</button>
+  </form>
+  <script>
+    if (new URLSearchParams(location.search).get('error')) {
+      document.getElementById('err').classList.add('show');
+    }
+  </script>
+</body>
+</html>

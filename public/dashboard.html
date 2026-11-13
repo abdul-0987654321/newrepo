@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KSC Carpets - Leads Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #1f7a5c;
+    --accent-dark: #16593f;
+    --ink: #1c2321;
+    --muted: #6b7570;
+    --line: #e7e5e0;
+    --surface: #ffffff;
+    --bg: #f6f5f1;
+    --danger: #a5342f;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, Arial, sans-serif; background: var(--bg); margin: 0; padding: 28px; color: var(--ink); }
+  h1 { font-size: 21px; margin: 0 0 2px; font-weight: 700; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .filters { margin-bottom: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters button { padding: 7px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 20px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--muted); transition: .15s; }
+  .filters button:hover { border-color: var(--accent); color: var(--accent); }
+  .filters button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
+  th, td { text-align: left; padding: 11px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  th { background: #fafaf8; font-weight: 600; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fafaf8; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
+  .badge.new { background: #e6f0ff; color: #1a56b0; }
+  .badge.interested { background: #e3f4ec; color: var(--accent-dark); }
+  .badge.not_interested { background: #fdeaea; color: var(--danger); }
+  .badge.booked { background: #fff4e0; color: #a56b0c; }
+  .badge.completed { background: #ececea; color: #555; }
+  .empty { padding: 48px; text-align: center; color: var(--muted); font-size: 13px; }
+  .refresh { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .panel { background: var(--surface); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
+  .panel-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-dark); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; }
+  .panel-row { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; flex-wrap: wrap; }
+  .panel-row:last-child { margin-bottom: 0; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .status-dot.connected { background: var(--accent); }
+  .status-dot.disconnected { background: #c94b3f; }
+  .status-dot.connecting { background: #c9963f; }
+  .status-text { font-size: 13px; font-weight: 600; }
+  .meta-line { font-size: 12px; color: var(--muted); }
+  .meta-line b { color: var(--ink); font-weight: 600; }
+  .switch { position: relative; width: 38px; height: 21px; display: inline-block; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #d8d6d0; border-radius: 22px; cursor: pointer; transition: .2s; }
+  .slider:before { content: ""; position: absolute; height: 15px; width: 15px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider:before { transform: translateX(17px); }
+  .toggle-label { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; }
+  textarea, input[type="text"] { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 13px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; min-height: 56px; background: #fdfdfc; }
+  input[type="text"] { min-height: unset; }
+  input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .field-label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px; }
+  .save-btn { padding: 8px 16px; border: none; background: var(--accent); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .save-btn:hover { background: var(--accent-dark); }
+  .save-btn.danger { background: var(--danger); }
+  .save-btn.danger:hover { background: #7e2721; }
+  .save-btn.secondary { background: #edece8; color: var(--ink); }
+  .save-btn.secondary:hover { background: #e2e0da; }
+  .save-btn:disabled { opacity: 0.5; cursor: default; }
+  .saved-note { font-size: 12px; color: var(--accent-dark); font-weight: 600; }
+  .link-tabs { display: inline-flex; gap: 2px; margin-bottom: 14px; background: #ece9e3; padding: 4px; border-radius: 10px; }
+  .link-tabs button { padding: 6px 16px; border: none; background: transparent; font-size: 12.5px; font-weight: 600; cursor: pointer; border-radius: 7px; color: var(--muted); }
+  .link-tabs button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .qr-box { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .qr-box p { font-size: 12px; color: var(--muted); margin: 0; }
+  .pair-code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 30px; font-weight: 700; letter-spacing: 4px; background: #f1f0ec; padding: 12px 18px; border-radius: 10px; display: inline-block; }
+  .steps { font-size: 12px; color: var(--muted); margin: 8px 0 0; padding-left: 18px; line-height: 1.7; }
+  .tabs { display: inline-flex; gap: 2px; margin-bottom: 16px; background: #ece9e3; padding: 4px; border-radius: 10px; }
+  .tabs button { padding: 7px 18px; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 7px; color: var(--muted); transition: .15s; }
+  .tabs button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .chat-layout { display: flex; gap: 14px; height: 560px; }
+  .chat-list { width: 280px; background: var(--surface); border-radius: 12px; overflow-y: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
+  .chat-list-item { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: .1s; }
+  .chat-list-item:hover { background: #fafaf8; }
+  .chat-list-item.active { background: #e3f4ec; }
+  .chat-list-item .name { font-size: 13px; font-weight: 600; }
+  .chat-list-item .preview { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .chat-panel { flex: 1; background: var(--surface); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); display: flex; flex-direction: column; }
+  .chat-header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 9px; }
+  .msg { max-width: 70%; padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.4; }
+  .msg.user { align-self: flex-start; background: #f1f0ec; }
+  .msg.assistant { align-self: flex-end; background: #e3f4ec; }
+  .msg.human { align-self: flex-end; background: #fff2df; }
+  .msg .role-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .chat-input { display: flex; gap: 8px; padding: 14px; border-top: 1px solid var(--line); }
+  .chat-input input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+  .chat-input button { padding: 9px 18px; border: none; background: var(--accent); color: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .takeover-note { font-size: 11.5px; color: var(--muted); padding: 0 14px 12px; }
+  .log { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #fbfbf9; }
+  .log-row { padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 12px; display: flex; gap: 10px; align-items: flex-start; }
+  .log-row:last-child { border-bottom: none; }
+  .log-row .when { color: var(--muted); white-space: nowrap; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; }
+  .log-row .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; white-space: nowrap; }
+  .log-row.error .tag { background: #fdeaea; color: var(--danger); }
+  .log-row.warn .tag { background: #fff4e0; color: #a56b0c; }
+  .log-row.info .tag { background: #ececea; color: #555; }
+  .log-row .body { flex: 1; word-break: break-word; }
+  .log-row .scope { font-weight: 600; margin-right: 6px; }
+  .log-row details summary { cursor: pointer; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .log-row pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+  .banner { padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500; margin-bottom: 12px; display: none; }
+  .banner.show { display: block; }
+  .banner.bad { background: #fdeaea; color: var(--danger); }
+  .banner.good { background: #e3f4ec; color: var(--accent-dark); }
+  .big-status { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .big-status .status-dot { width: 12px; height: 12px; margin: 0; }
+  .status-help { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .how { background: #f1f0ec; border-radius: 8px; padding: 11px 14px; font-size: 13px; line-height: 1.6; margin: 14px 0; }
+  .how b { font-weight: 600; }
+  details.tech { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  details.tech summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); }
+  details.tech .inner { padding-top: 12px; }
+  .topbar { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 20px; font-size: 12.5px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); margin-left: auto; }
+  .pill .status-dot { margin: 0; }
+  .alert { display: none; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; background: #fdeaea; color: var(--danger); font-size: 13px; font-weight: 600; margin-bottom: 16px; flex-wrap: wrap; }
+  .alert.show { display: flex; }
+  .alert button { margin-left: auto; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>KSC Carpets - Leads</h1>
+      <div class="sub" style="margin-bottom:0">WhatsApp enquiries, auto-updated and answered by AI.</div>
+    </div>
+    <!-- At-a-glance status. Everything technical lives in the Settings tab, so
+         this pill is the only connection info on the leads screen. -->
+    <span class="pill"><span class="status-dot" id="headerDot"></span><span id="headerStatus">Checking...</span></span>
+  </div>
+
+  <!-- Only ever shown when the bot genuinely cannot work. Otherwise the client
+       never sees anything about sessions, codes or errors. -->
+  <div class="alert" id="topAlert">
+    <span id="topAlertText"></span>
+    <button class="save-btn danger" id="goToSettingsBtn">Fix it</button>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="leads" class="active">Leads</button>
+    <button data-tab="chats">Chats</button>
+    <button data-tab="settings">Settings</button>
+  </div>
+
+  <div id="settingsView" style="display:none">
+
+  <div class="panel">
+    <p class="panel-title">WhatsApp connection</p>
+
+    <div class="big-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusHeadline">Checking...</span>
+    </div>
+    <div class="status-help" id="statusHelp"></div>
+
+    <div id="linkArea" style="display:none">
+      <div class="how">
+        <b>On the KSC Carpets phone:</b> open WhatsApp &rarr; Settings &rarr; Linked Devices &rarr; <b>Link a device</b>.<br>
+        Then use one of the two options below.
+      </div>
+
+      <div class="link-tabs">
+        <button data-link="qr" class="active">Scan a QR code</button>
+        <button data-link="code">Type a code instead</button>
+      </div>
+
+      <div id="linkQr" class="qr-box">
+        <p>Point the phone's camera at this square. It refreshes every few seconds - always use the one on screen.</p>
+        <img id="qrImage" style="width:220px; height:220px; border:1px solid var(--line); border-radius:8px; display:none;">
+        <p id="qrWaiting">Waiting for a QR code...</p>
+      </div>
+
+      <div id="linkCode" style="display:none">
+        <p class="status-help">Use this when the phone isn't in front of you. On the phone, tap <b>Link with phone number instead</b> first, then press the button here.</p>
+        <span class="field-label">The KSC Carpets WhatsApp number - country code, digits only (e.g. 447911123456)</span>
+        <div class="panel-row" style="margin-top:0">
+          <input type="text" id="pairNumber" placeholder="447911123456" style="max-width:260px">
+          <button class="save-btn" id="pairBtn">Get pairing code</button>
+          <button class="save-btn secondary" id="backToQrBtn">Back to QR</button>
+        </div>
+        <div id="pairResult" style="display:none">
+          <div class="pair-code" id="pairCode"></div>
+          <div class="meta-line" id="pairAge" style="margin-top:6px;"></div>
+          <ol class="steps">
+            <li>Make sure the phone is already on the "Enter code" screen.</li>
+            <li>Type the code above - it expires in about two minutes.</li>
+            <li>If it's refused, press "Get pairing code" again for a fresh one.</li>
+          </ol>
+        </div>
+        <div class="meta-line" id="pairError" style="color:var(--danger); margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <details class="tech">
+      <summary>Technical details</summary>
+      <div class="inner">
+        <div class="meta-line" id="connectedAs"></div>
+        <div class="meta-line" id="sessionInfo" style="margin-top:4px;"></div>
+        <div class="meta-line" id="lastDisconnect" style="margin-top:4px;"></div>
+        <div class="panel-row" style="margin-top:12px">
+          <button class="save-btn secondary" id="backupNowBtn">Save login to Sheet now</button>
+          <button class="save-btn secondary" id="reconnectBtn">Reconnect now</button>
+          <button class="save-btn danger" id="relinkBtn">Unlink &amp; start over</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Bot controls</p>
+    <div class="panel-row">
+      <label class="toggle-label">
+        <span class="switch"><input type="checkbox" id="botEnabledToggle"><span class="slider"></span></span>
+        Automated replies
+      </label>
+      <label class="toggle-label">
+        <span class="switch"><input type="checkbox" id="followupEnabledToggle"><span class="slider"></span></span>
+        Follow-ups
+      </label>
+      <label class="toggle-label">
+        <span class="switch"><input type="checkbox" id="reviewReminderToggle"><span class="slider"></span></span>
+        Review reminders
+      </label>
+      <button class="save-btn secondary" id="runNowBtn" style="margin-left:auto;">Send follow-ups / reviews now</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Notify me about new enquiries</p>
+    <div class="panel-row" style="display:block">
+      <span class="field-label">Your WhatsApp number (gets a message the moment a lead completes an enquiry)</span>
+      <input type="text" id="adminNotificationNumber" placeholder="e.g. 447xxxxxxxxx">
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-row">
+      <button class="save-btn" id="saveSettingsBtn">Save settings</button>
+      <span class="saved-note" id="savedNote" style="display:none">Saved</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Activity &amp; errors</p>
+    <div class="panel-row">
+      <span class="meta-line" id="errorCounts"></span>
+      <label class="toggle-label" style="margin-left:auto;">
+        <span class="switch"><input type="checkbox" id="errorsOnlyToggle"><span class="slider"></span></span>
+        Errors only
+      </label>
+      <button class="save-btn secondary" id="refreshLogBtn">Refresh</button>
+      <button class="save-btn secondary" id="clearLogBtn">Clear</button>
+    </div>
+    <div class="log" id="logBox"></div>
+  </div>
+
+  </div><!-- /settingsView -->
+
+  <div id="leadsView">
+  <div class="filters" id="filters">
+    <button data-filter="all" class="active">All</button>
+    <button data-filter="new">New</button>
+    <button data-filter="interested">Interested</button>
+    <button data-filter="booked">Booked</button>
+    <button data-filter="completed">Completed</button>
+    <button data-filter="not_interested">Not interested</button>
+    <span class="refresh" id="refreshLabel"></span>
+  </div>
+
+  <table id="table">
+    <thead>
+      <tr>
+        <th>Name</th><th>Phone</th><th>Status</th><th>Carpet</th><th>Room</th><th>Size</th>
+        <th>Colour</th><th>Budget</th><th>Preferred time</th><th>Address</th><th>Postcode</th>
+        <th>Contact number</th><th>Last contacted</th><th>Change status</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">No leads yet.</div>
+  </div>
+
+  <div id="chatsView" style="display:none">
+    <div class="chat-layout">
+      <div class="chat-list" id="chatList"></div>
+      <div class="chat-panel">
+        <div class="chat-header" id="chatHeader">
+          <span id="chatHeaderName" style="font-size:14px; font-weight:600;">Select a conversation</span>
+          <label class="toggle-label" style="margin-left:auto; display:none;" id="takeoverLabel">
+            <span class="switch"><input type="checkbox" id="takeoverToggle"><span class="slider"></span></span>
+            I'm replying manually
+          </label>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="takeover-note" id="takeoverNote" style="display:none">AI is paused for this chat - your replies here go straight to the customer.</div>
+        <div class="chat-input">
+          <input type="text" id="chatInput" placeholder="Type a message...">
+          <button id="chatSendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let allLeads = [];
+let activeFilter = 'all';
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function when(iso) {
+  if (!iso) return 'never';
+  try { return new Date(iso).toLocaleString(); } catch (e) { return String(iso); }
+}
+
+/* ----------------------------- Leads ----------------------------- */
+
+async function loadLeads() {
+  const res = await fetch('/api/leads');
+  if (!res.ok) return;
+  allLeads = await res.json();
+  render();
+  document.getElementById('refreshLabel').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function render() {
+  const rows = document.getElementById('rows');
+  const empty = document.getElementById('empty');
+  const filtered = activeFilter === 'all' ? allLeads : allLeads.filter(l => l.status === activeFilter);
+
+  rows.innerHTML = '';
+  empty.style.display = filtered.length ? 'none' : 'block';
+
+  for (const lead of filtered) {
+    const tr = document.createElement('tr');
+    const status = lead.status || 'new';
+    tr.innerHTML = `
+      <td>${escapeHtml(lead.name || '-')}</td>
+      <td>${escapeHtml(lead.phone || '-')}</td>
+      <td><span class="badge ${status}">${status.replace('_',' ')}</span></td>
+      <td>${escapeHtml(lead.carpetType || '-')}</td>
+      <td>${escapeHtml(lead.room || '-')}</td>
+      <td>${escapeHtml(lead.size || '-')}</td>
+      <td>${escapeHtml(lead.colour || '-')}</td>
+      <td>${escapeHtml(lead.budget || '-')}</td>
+      <td>${escapeHtml(lead.preferredTime || '-')}</td>
+      <td>${escapeHtml(lead.customerAddress || '-')}</td>
+      <td>${escapeHtml(lead.postcode || '-')}</td>
+      <td>${escapeHtml(lead.contactNumber || '-')}</td>
+      <td>${lead.lastContacted ? when(lead.lastContacted) : ''}</td>
+      <td>
+        <select data-phone="${escapeHtml(lead.phone)}" class="status-select">
+          <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
+          <option value="interested" ${status === 'interested' ? 'selected' : ''}>Interested</option>
+          <option value="booked" ${status === 'booked' ? 'selected' : ''}>Booked</option>
+          <option value="completed" ${status === 'completed' ? 'selected' : ''}>Completed</option>
+          <option value="not_interested" ${status === 'not_interested' ? 'selected' : ''}>Not interested</option>
+        </select>
+      </td>
+      <td><button class="save-btn danger" style="padding:5px 10px; font-size:12px;" data-phone="${escapeHtml(lead.phone)}">Delete</button></td>
+    `;
+    tr.querySelector('.status-select').addEventListener('change', async (e) => {
+      await fetch('/api/leads/' + encodeURIComponent(lead.phone) + '/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: e.target.value }),
+      });
+      loadLeads();
+    });
+    tr.querySelector('button[data-phone]').addEventListener('click', async () => {
+      if (!confirm(`Delete ${lead.name || lead.phone}? This removes the lead and its whole chat history permanently.`)) return;
+      await fetch('/api/leads/' + encodeURIComponent(lead.phone), { method: 'DELETE' });
+      loadLeads();
+    });
+    rows.appendChild(tr);
+  }
+}
+
+document.getElementById('filters').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') return;
+  document.querySelectorAll('#filters button').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  activeFilter = e.target.dataset.filter;
+  render();
+});
+
+/* ----------------------------- Connection ----------------------------- */
+
+let linkMode = 'qr';
+
+document.querySelectorAll('.link-tabs button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.link-tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    linkMode = btn.dataset.link;
+    document.getElementById('linkQr').style.display = linkMode === 'qr' ? 'flex' : 'none';
+    document.getElementById('linkCode').style.display = linkMode === 'code' ? 'block' : 'none';
+  });
+});
+
+async function loadStatus() {
+  const res = await fetch('/api/status');
+  if (!res.ok) return;
+  const s = await res.json();
+
+  // Plain-language status first - the client should never have to decode a
+  // status code to know whether the bot is answering customers right now.
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + s.whatsapp;
+
+  // Header pill + alert: the only connection signals on the Leads screen.
+  document.getElementById('headerDot').className = 'status-dot ' + s.whatsapp;
+  document.getElementById('headerStatus').textContent = s.connected
+    ? 'WhatsApp connected'
+    : (s.needsRelink ? 'WhatsApp not linked' : 'WhatsApp reconnecting');
+
+  const alertBox = document.getElementById('topAlert');
+  if (!s.connected && s.needsRelink) {
+    alertBox.classList.add('show');
+    document.getElementById('topAlertText').textContent =
+      'WhatsApp is not linked - new enquiries are not being answered.';
+  } else {
+    alertBox.classList.remove('show');
+  }
+
+  const headline = document.getElementById('statusHeadline');
+  const help = document.getElementById('statusHelp');
+  if (s.connected) {
+    headline.textContent = 'Connected';
+    help.innerHTML = s.me
+      ? `The bot is answering customers on <b>${escapeHtml(String(s.me).split(':')[0])}</b>.`
+      : 'The bot is answering customers.';
+  } else if (s.replaced) {
+    headline.textContent = 'Taken over by another copy';
+    help.textContent = 'Another copy of the bot (usually the newest deploy) is using this WhatsApp number, so this copy has paused. If nothing else is running, press "Reconnect now" under Technical details.';
+  } else if (s.needsRelink) {
+    headline.textContent = 'Not linked';
+    help.textContent = 'The bot cannot send or receive anything until the phone is linked again. Follow the steps below.';
+  } else if (s.whatsapp === 'connecting') {
+    headline.textContent = 'Reconnecting...';
+    help.textContent = 'Trying to get back on. This usually sorts itself out in a minute.';
+  } else {
+    headline.textContent = 'Disconnected';
+    help.textContent = 'The bot is not answering customers right now.';
+  }
+
+  document.getElementById('connectedAs').innerHTML = s.me ? `Linked number: <b>${escapeHtml(String(s.me).split(':')[0])}</b>` : 'No number linked.';
+
+  const sess = s.session || {};
+  let sessionLine = `Login saved in Google Sheet: <b>${sess.keys || 0} key(s)</b>`;
+  sessionLine += sess.pending ? `, <b>${sess.pending}</b> waiting to save` : ', all saved';
+  if (sess.lastSavedAt) sessionLine += ` &middot; last save ${when(sess.lastSavedAt)}`;
+  if (sess.loadedFrom) sessionLine += ` &middot; at startup: <b>${escapeHtml(sess.loadedFrom)}</b>`;
+  if (sess.lastSaveError) sessionLine += ` &middot; <span style="color:var(--danger)">last save failed: ${escapeHtml(sess.lastSaveError)}</span>`;
+  document.getElementById('sessionInfo').innerHTML = sessionLine;
+
+  const ld = s.lastDisconnect;
+  document.getElementById('lastDisconnect').innerHTML = ld
+    ? `Last disconnect: <b>${escapeHtml(String(ld.reason))}</b> (code ${escapeHtml(String(ld.statusCode))}) at ${when(ld.at)} &middot; ${escapeHtml(ld.message || '')}`
+    : '';
+
+  document.getElementById('linkArea').style.display = (s.connected || !s.needsRelink) ? 'none' : 'block';
+
+  const img = document.getElementById('qrImage');
+  const waiting = document.getElementById('qrWaiting');
+  if (s.qr) { img.src = s.qr; img.style.display = 'block'; waiting.style.display = 'none'; }
+  else { img.style.display = 'none'; waiting.style.display = 'block'; }
+
+  if (s.pairingCode) {
+    document.getElementById('pairCode').textContent = s.pairingCode;
+    document.getElementById('pairResult').style.display = 'block';
+    const ageSec = s.pairingCodeAt ? Math.round((Date.now() - new Date(s.pairingCodeAt).getTime()) / 1000) : null;
+    const ageBox = document.getElementById('pairAge');
+    if (ageSec === null) ageBox.textContent = '';
+    else if (ageSec > 150) ageBox.innerHTML = '<span style="color:var(--danger)">This code is likely expired - press "Get pairing code" again.</span>';
+    else ageBox.textContent = `Code generated ${ageSec}s ago - type it within about 2 minutes.`;
+  }
+}
+
+document.getElementById('relinkBtn').addEventListener('click', async (e) => {
+  if (!confirm('This disconnects the current WhatsApp session and asks for a new QR / pairing code. Continue?')) return;
+  e.target.disabled = true; e.target.textContent = 'Unlinking...';
+  await fetch('/api/whatsapp/relink', { method: 'POST' });
+  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Unlink & start over'; loadStatus(); }, 3000);
+});
+
+// Forces a session backup right now - the thing to press straight after a
+// fresh link, to confirm the Sheet really has the session before any restart.
+document.getElementById('backupNowBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true; e.target.textContent = 'Backing up...';
+  try {
+    const res = await fetch('/api/whatsapp/backup-session', { method: 'POST' });
+    const data = await res.json();
+    alert(data.ok ? 'Login is fully saved in the Google Sheet.' : 'Some login changes could not be saved yet - see Activity & errors below.');
+  } catch (err) {
+    alert('Backup failed: ' + err.message);
+  } finally {
+    e.target.disabled = false; e.target.textContent = 'Save login to Sheet now';
+    loadStatus(); loadLog();
+  }
+});
+
+document.getElementById('reconnectBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true; e.target.textContent = 'Reconnecting...';
+  await fetch('/api/whatsapp/reconnect', { method: 'POST' });
+  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Reconnect now'; loadStatus(); loadLog(); }, 3000);
+});
+
+document.getElementById('pairBtn').addEventListener('click', async (e) => {
+  const number = document.getElementById('pairNumber').value.trim();
+  const errBox = document.getElementById('pairError');
+  errBox.textContent = '';
+  if (!number) { errBox.textContent = 'Enter the number first.'; return; }
+  if (!confirm('This clears the current WhatsApp session and starts a fresh link for ' + number + '. Continue?')) return;
+
+  e.target.disabled = true; e.target.textContent = 'Getting code...';
+  try {
+    const res = await fetch('/api/whatsapp/pairing-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    document.getElementById('pairCode').textContent = data.code;
+    document.getElementById('pairResult').style.display = 'block';
+  } catch (err) {
+    errBox.textContent = err.message;
+  } finally {
+    e.target.disabled = false; e.target.textContent = 'Get pairing code';
+    loadStatus(); loadLog();
+  }
+});
+
+document.getElementById('backToQrBtn').addEventListener('click', async () => {
+  await fetch('/api/whatsapp/use-qr', { method: 'POST' });
+  document.getElementById('pairResult').style.display = 'none';
+  document.querySelector('.link-tabs button[data-link="qr"]').click();
+  setTimeout(loadStatus, 2000);
+});
+
+/* ----------------------------- Error log ----------------------------- */
+
+async function loadLog() {
+  const onlyErrors = document.getElementById('errorsOnlyToggle').checked;
+  const res = await fetch('/api/errors?limit=120' + (onlyErrors ? '&level=error' : ''));
+  if (!res.ok) return;
+  const data = await res.json();
+  const counts = data.counts || {};
+  document.getElementById('errorCounts').innerHTML =
+    `<b>${counts.errors || 0}</b> error(s), <b>${counts.warnings || 0}</b> warning(s) since the last restart`;
+
+  const box = document.getElementById('logBox');
+  if (!data.entries.length) { box.innerHTML = '<div class="log-row info"><div class="body">Nothing logged yet.</div></div>'; return; }
+  box.innerHTML = data.entries.map((e) => `
+    <div class="log-row ${e.level}">
+      <span class="when">${when(e.time)}</span>
+      <span class="tag">${escapeHtml(e.level)}</span>
+      <div class="body">
+        <span class="scope">${escapeHtml(e.scope)}</span>${escapeHtml(e.message)}
+        ${e.detail ? `<details><summary>details</summary><pre>${escapeHtml(e.detail)}</pre></details>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('refreshLogBtn').addEventListener('click', loadLog);
+document.getElementById('errorsOnlyToggle').addEventListener('change', loadLog);
+document.getElementById('clearLogBtn').addEventListener('click', async () => {
+  await fetch('/api/errors/clear', { method: 'POST' });
+  loadLog();
+});
+
+/* ----------------------------- Settings ----------------------------- */
+
+let currentSettings = {};
+
+async function loadSettings() {
+  const res = await fetch('/api/settings');
+  if (!res.ok) return;
+  currentSettings = await res.json();
+  document.getElementById('botEnabledToggle').checked = currentSettings.botEnabled !== false;
+  document.getElementById('followupEnabledToggle').checked = currentSettings.followupEnabled !== false;
+  document.getElementById('reviewReminderToggle').checked = currentSettings.reviewReminderEnabled !== false;
+  document.getElementById('adminNotificationNumber').value = currentSettings.adminNotificationNumber || '';
+}
+
+async function saveSettings(partial) {
+  const res = await fetch('/api/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(partial),
+  });
+  if (res.ok) {
+    currentSettings = await res.json();
+    const note = document.getElementById('savedNote');
+    note.style.display = 'inline';
+    setTimeout(() => { note.style.display = 'none'; }, 1500);
+  }
+}
+
+document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+  saveSettings({
+    botEnabled: document.getElementById('botEnabledToggle').checked,
+    followupEnabled: document.getElementById('followupEnabledToggle').checked,
+    reviewReminderEnabled: document.getElementById('reviewReminderToggle').checked,
+    adminNotificationNumber: document.getElementById('adminNotificationNumber').value.trim(),
+  });
+});
+
+document.getElementById('runNowBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true; e.target.textContent = 'Running...';
+  await fetch('/api/run-now', { method: 'POST' });
+  e.target.textContent = 'Done - check leads/WhatsApp';
+  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Send follow-ups / reviews now'; loadLeads(); loadLog(); }, 2000);
+});
+
+/* ----------------------------- Chats ----------------------------- */
+
+/**
+ * The dashboard opens on Leads and stays there. Connection, bot controls,
+ * the admin number and the error log all live behind the Settings tab, so the
+ * day-to-day user only ever sees their enquiries.
+ */
+function showTab(tab) {
+  document.querySelectorAll('.tabs button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  document.getElementById('leadsView').style.display = tab === 'leads' ? '' : 'none';
+  document.getElementById('chatsView').style.display = tab === 'chats' ? '' : 'none';
+  document.getElementById('settingsView').style.display = tab === 'settings' ? '' : 'none';
+  if (tab === 'chats') loadChats();
+  if (tab === 'settings') { loadStatus(); loadLog(); }
+}
+
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+
+document.getElementById('goToSettingsBtn').addEventListener('click', () => {
+  showTab('settings');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+let allChats = [];
+let activeChatPhone = null;
+
+async function loadChats() {
+  const res = await fetch('/api/chats');
+  if (!res.ok) return;
+  allChats = await res.json();
+  renderChatList();
+}
+
+function renderChatList() {
+  const list = document.getElementById('chatList');
+  list.innerHTML = '';
+  for (const chat of allChats) {
+    const div = document.createElement('div');
+    div.className = 'chat-list-item' + (chat.phone === activeChatPhone ? ' active' : '');
+    div.innerHTML = `
+      <div class="name">${escapeHtml(chat.name || chat.phone)}</div>
+      <div class="preview">${escapeHtml(chat.lastMessage || 'No messages yet')}</div>
+    `;
+    div.addEventListener('click', () => openChat(chat.phone));
+    list.appendChild(div);
+  }
+}
+
+async function openChat(phone) {
+  activeChatPhone = phone;
+  renderChatList();
+  const chat = allChats.find(c => c.phone === phone);
+  document.getElementById('chatHeaderName').textContent = (chat && chat.name) || phone;
+  document.getElementById('takeoverLabel').style.display = 'flex';
+  document.getElementById('takeoverToggle').checked = chat && chat.humanTakeover === true;
+  updateTakeoverNote(chat && chat.humanTakeover === true);
+
+  const res = await fetch('/api/chats/' + encodeURIComponent(phone) + '/messages');
+  const messages = res.ok ? await res.json() : [];
+  const box = document.getElementById('chatMessages');
+  box.innerHTML = messages.map(m => `
+    <div class="msg ${m.role}">
+      <div class="role-label">${m.role === 'user' ? escapeHtml((chat && chat.name) || 'Customer') : (m.role === 'human' ? 'You' : 'AI')}</div>
+      ${escapeHtml(m.text)}
+    </div>
+  `).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function updateTakeoverNote(isTakeover) {
+  document.getElementById('takeoverNote').style.display = isTakeover ? 'block' : 'none';
+}
+
+document.getElementById('takeoverToggle').addEventListener('change', async (e) => {
+  if (!activeChatPhone) return;
+  const humanTakeover = e.target.checked;
+  updateTakeoverNote(humanTakeover);
+  await fetch('/api/chats/' + encodeURIComponent(activeChatPhone) + '/takeover', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ humanTakeover }),
+  });
+  loadChats();
+});
+
+async function sendChatMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text || !activeChatPhone) return;
+  input.value = '';
+  const res = await fetch('/api/chats/' + encodeURIComponent(activeChatPhone) + '/send', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert('Could not send: ' + (data.error || 'unknown error'));
+    loadLog();
+  }
+  openChat(activeChatPhone);
+}
+
+document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
+document.getElementById('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChatMessage();
+});
+
+setInterval(() => {
+  if (document.getElementById('chatsView').style.display !== 'none') {
+    loadChats();
+    if (activeChatPhone) openChat(activeChatPhone);
+  }
+}, 8000);
+
+/* ----------------------------- Boot ----------------------------- */
+
+loadStatus();
+loadSettings();
+loadLeads();
+loadLog();
+setInterval(loadStatus, 4000);
+setInterval(loadLeads, 30000);
+setInterval(loadLog, 15000);
+</script>
+</body>
+</html>
