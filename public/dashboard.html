@@ -2,476 +2,879 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>KSC Carpets - Leads Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Automation console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
-    --accent: #1f7a5c;
-    --accent-dark: #16593f;
-    --ink: #1c2321;
-    --muted: #6b7570;
-    --line: #e7e5e0;
-    --surface: #ffffff;
-    --bg: #f6f5f1;
-    --danger: #a5342f;
+    --paper: #eef1f0;
+    --card: #ffffff;
+    --ink: #16302b;
+    --ink-soft: #5f726d;
+    --live: #0b7d5a;
+    --watch: #b26a07;
+    --stop: #a32b22;
+    --rule: #d8dfdc;
+    --rail: 228px;
+    --gutter: 24px;
   }
+
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', -apple-system, Arial, sans-serif; background: var(--bg); margin: 0; padding: 28px; color: var(--ink); }
-  h1 { font-size: 21px; margin: 0 0 2px; font-weight: 700; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
-  .filters { margin-bottom: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .filters button { padding: 7px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 20px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--muted); transition: .15s; }
-  .filters button:hover { border-color: var(--accent); color: var(--accent); }
-  .filters button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
-  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
-  th, td { text-align: left; padding: 11px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  th { background: #fafaf8; font-weight: 600; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    overflow-x: hidden;
+    font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  button, input, textarea, select { font: inherit; color: inherit; }
+
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+
+  /* ---------------- Shell ---------------- */
+
+  .shell { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 100vh; }
+
+  .rail {
+    background: var(--ink);
+    color: #cfdbd7;
+    padding: 22px 14px calc(22px + env(safe-area-inset-bottom));
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .brand { color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -0.01em; padding: 0 10px 2px; }
+  .brand-sub { color: #8aa49d; font-size: 12.5px; padding: 0 10px 20px; }
+
+  .rail-group { margin-bottom: 18px; }
+  .rail-group h2 {
+    font-size: 12.5px; font-weight: 500; color: #7e9a93;
+    margin: 0 0 6px; padding: 0 10px;
+  }
+  .rail a {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; border-radius: 7px;
+    color: #cfdbd7; text-decoration: none; font-size: 14.5px; font-weight: 500;
+    cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+  }
+  .rail a:hover { background: rgba(255,255,255,0.07); color: #fff; }
+  .rail a[aria-current="page"] { background: #fff; color: var(--ink); font-weight: 700; }
+  .rail a .count { margin-left: auto; font-size: 12.5px; color: #8aa49d; font-weight: 500; }
+  .rail a[aria-current="page"] .count { color: var(--ink-soft); }
+
+  .rail-foot { border-top: 1px solid rgba(255,255,255,0.12); padding-top: 14px; margin-top: 22px; }
+  .rail-foot a { font-size: 13.5px; color: #8aa49d; }
+
+  main { padding: 28px var(--gutter) 60px; max-width: 1140px; }
+
+  /* ---------------- Headline status ---------------- */
+
+  .headline { margin-bottom: 26px; }
+  .headline h1 {
+    font-size: clamp(26px, 5vw, 40px);
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+    margin: 0 0 6px;
+    display: flex; align-items: center; gap: 13px;
+  }
+  .headline p { margin: 0; color: var(--ink-soft); max-width: 62ch; }
+
+  .beacon { width: 14px; height: 14px; border-radius: 50%; flex: none; background: var(--ink-soft); }
+  .beacon.live { background: var(--live); box-shadow: 0 0 0 5px rgba(11,125,90,0.16); }
+  .beacon.watch { background: var(--watch); box-shadow: 0 0 0 5px rgba(178,106,7,0.16); }
+  .beacon.stop { background: var(--stop); box-shadow: 0 0 0 5px rgba(163,43,34,0.16); }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; background: var(--ink-soft); }
+  .dot.live, .dot.connected { background: var(--live); }
+  .dot.watch, .dot.connecting { background: var(--watch); }
+  .dot.stop, .dot.disconnected { background: var(--stop); }
+
+  /* ---------------- Channel tiles ---------------- */
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 12px; margin-bottom: 30px; }
+  .tile {
+    background: var(--card); border: 1px solid var(--rule); border-left: 4px solid var(--ink-soft);
+    border-radius: 4px; padding: 14px 16px; text-align: left; cursor: pointer; display: block; width: 100%;
+  }
+  .tile:hover { border-color: var(--ink); border-left-color: var(--ink); }
+  .tile.live { border-left-color: var(--live); }
+  .tile.watch { border-left-color: var(--watch); }
+  .tile.stop { border-left-color: var(--stop); }
+  .tile.off { border-left-color: var(--rule); opacity: .72; cursor: default; }
+  .tile.off:hover { border-color: var(--rule); border-left-color: var(--rule); }
+  .tile { display: flex; flex-direction: column; min-height: 104px; }
+  .tile .name { font-weight: 700; font-size: 15.5px; display: flex; align-items: center; gap: 8px; }
+  .tile .state { display: block; font-size: 13.5px; color: var(--ink-soft); margin-top: 2px; }
+  .tile .figure { display: block; font-size: 25px; font-weight: 700; letter-spacing: -0.02em; margin-top: auto; padding-top: 10px; line-height: 1; }
+  .tile .figure small { font-size: 13px; font-weight: 400; color: var(--ink-soft); letter-spacing: 0; margin-left: 5px; }
+
+  /* ---------------- Panels ---------------- */
+
+  .panel { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; margin-bottom: 16px; }
+  .panel > h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.015em; margin: 0 0 4px; }
+  .panel > .lede { color: var(--ink-soft); margin: 0 0 18px; font-size: 14px; max-width: 64ch; }
+  .panel h3 { font-size: 15px; font-weight: 700; margin: 22px 0 8px; }
+  .panel h3:first-of-type { margin-top: 0; }
+
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .row + .row { margin-top: 12px; }
+  .note { font-size: 13.5px; color: var(--ink-soft); }
+  .note b { color: var(--ink); font-weight: 600; }
+  .warn { color: var(--stop); }
+
+  .alert { border: 1px solid var(--rule); border-left: 4px solid var(--watch); background: #fdf6ea; border-radius: 4px; padding: 12px 15px; margin-bottom: 18px; font-size: 14px; display: none; }
+  .alert.show { display: block; }
+  .alert.bad { border-left-color: var(--stop); background: #fcefee; }
+  .alert strong { display: block; font-weight: 700; margin-bottom: 2px; }
+
+  .steps { margin: 10px 0 0; padding-left: 20px; color: var(--ink-soft); font-size: 14px; line-height: 1.75; }
+  .steps li::marker { color: var(--ink); font-weight: 700; }
+
+  /* ---------------- Controls ---------------- */
+
+  .btn {
+    padding: 9px 16px; border-radius: 7px; border: 1px solid var(--ink);
+    background: var(--ink); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  .btn:hover { background: #0d211d; }
+  .btn[disabled] { opacity: .45; cursor: default; }
+  .btn.quiet { background: transparent; color: var(--ink); border-color: var(--rule); }
+  .btn.quiet:hover { background: #f4f7f6; border-color: var(--ink); }
+  .btn.risk { background: var(--stop); border-color: var(--stop); }
+  .btn.risk:hover { background: #87221b; }
+  .btn.small { padding: 5px 11px; font-size: 13px; border-radius: 6px; }
+
+  label.field { display: block; margin-bottom: 14px; }
+  label.field > span { display: block; font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  label.field > em { display: block; font-style: normal; color: var(--ink-soft); font-size: 13.5px; margin-bottom: 7px; }
+  input[type="text"], input[type="number"], textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 7px;
+    background: #fbfcfc; font-size: 14.5px;
+  }
+  textarea { min-height: 90px; resize: vertical; line-height: 1.55; }
+  input:focus, textarea:focus { background: #fff; border-color: var(--ink); outline: none; }
+
+  .switch { display: flex; align-items: flex-start; gap: 11px; cursor: pointer; margin-bottom: 14px; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .track { width: 40px; height: 23px; border-radius: 20px; background: #c6d0cd; position: relative; flex: none; transition: background .18s; margin-top: 1px; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform .18s; }
+  .switch input:checked + .track { background: var(--live); }
+  .switch input:checked + .track::after { transform: translateX(17px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .switch .label { font-size: 14.5px; }
+  .switch .label b { display: block; font-weight: 600; }
+  .switch .label span { color: var(--ink-soft); font-size: 13.5px; }
+
+  .saved { color: var(--live); font-weight: 600; font-size: 13.5px; }
+
+  /* ---------------- Tables ---------------- */
+
+  .filters { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .filters button { padding: 6px 13px; border-radius: 20px; border: 1px solid var(--rule); background: var(--card); color: var(--ink-soft); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+  .filters button:hover { border-color: var(--ink); color: var(--ink); }
+  .filters button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  .table-wrap { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  /* Only the wide leads table needs to force a scroll; tables inside a panel
+     must stay narrow or they push the whole page sideways on a phone. */
+  .table-wrap table { min-width: 640px; }
+  .panel table th, .panel table td { padding-left: 0; }
+  .panel table tr:last-child td { border-bottom: none; }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--rule); font-size: 14px; vertical-align: top; }
+  th { font-weight: 600; color: var(--ink-soft); font-size: 13.5px; background: #f7f9f8; white-space: nowrap; }
   tr:last-child td { border-bottom: none; }
-  tbody tr:hover td { background: #fafaf8; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
-  .badge.new { background: #e6f0ff; color: #1a56b0; }
-  .badge.interested { background: #e3f4ec; color: var(--accent-dark); }
-  .badge.not_interested { background: #fdeaea; color: var(--danger); }
-  .badge.booked { background: #fff4e0; color: #a56b0c; }
-  .badge.completed { background: #ececea; color: #555; }
-  .empty { padding: 48px; text-align: center; color: var(--muted); font-size: 13px; }
-  .refresh { font-size: 12px; color: var(--muted); margin-left: auto; }
-  .panel { background: var(--surface); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
-  .panel-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-dark); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; }
-  .panel-row { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; flex-wrap: wrap; }
-  .panel-row:last-child { margin-bottom: 0; }
-  .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-  .status-dot.connected { background: var(--accent); }
-  .status-dot.disconnected { background: #c94b3f; }
-  .status-dot.connecting { background: #c9963f; }
-  .status-text { font-size: 13px; font-weight: 600; }
-  .meta-line { font-size: 12px; color: var(--muted); }
-  .meta-line b { color: var(--ink); font-weight: 600; }
-  .switch { position: relative; width: 38px; height: 21px; display: inline-block; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; inset: 0; background: #d8d6d0; border-radius: 22px; cursor: pointer; transition: .2s; }
-  .slider:before { content: ""; position: absolute; height: 15px; width: 15px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
-  .switch input:checked + .slider { background: var(--accent); }
-  .switch input:checked + .slider:before { transform: translateX(17px); }
-  .toggle-label { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; }
-  textarea, input[type="text"] { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 13px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; min-height: 56px; background: #fdfdfc; }
-  input[type="text"] { min-height: unset; }
-  input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
-  .field-label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px; }
-  .save-btn { padding: 8px 16px; border: none; background: var(--accent); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; }
-  .save-btn:hover { background: var(--accent-dark); }
-  .save-btn.danger { background: var(--danger); }
-  .save-btn.danger:hover { background: #7e2721; }
-  .save-btn.secondary { background: #edece8; color: var(--ink); }
-  .save-btn.secondary:hover { background: #e2e0da; }
-  .save-btn:disabled { opacity: 0.5; cursor: default; }
-  .saved-note { font-size: 12px; color: var(--accent-dark); font-weight: 600; }
-  .link-tabs { display: inline-flex; gap: 2px; margin-bottom: 14px; background: #ece9e3; padding: 4px; border-radius: 10px; }
-  .link-tabs button { padding: 6px 16px; border: none; background: transparent; font-size: 12.5px; font-weight: 600; cursor: pointer; border-radius: 7px; color: var(--muted); }
-  .link-tabs button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  .qr-box { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-  .qr-box p { font-size: 12px; color: var(--muted); margin: 0; }
-  .pair-code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 30px; font-weight: 700; letter-spacing: 4px; background: #f1f0ec; padding: 12px 18px; border-radius: 10px; display: inline-block; }
-  .steps { font-size: 12px; color: var(--muted); margin: 8px 0 0; padding-left: 18px; line-height: 1.7; }
-  .tabs { display: inline-flex; gap: 2px; margin-bottom: 16px; background: #ece9e3; padding: 4px; border-radius: 10px; }
-  .tabs button { padding: 7px 18px; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 7px; color: var(--muted); transition: .15s; }
-  .tabs button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  .chat-layout { display: flex; gap: 14px; height: 560px; }
-  .chat-list { width: 280px; background: var(--surface); border-radius: 12px; overflow-y: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); }
-  .chat-list-item { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: .1s; }
-  .chat-list-item:hover { background: #fafaf8; }
-  .chat-list-item.active { background: #e3f4ec; }
-  .chat-list-item .name { font-size: 13px; font-weight: 600; }
-  .chat-list-item .preview { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .chat-panel { flex: 1; background: var(--surface); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04); display: flex; flex-direction: column; }
-  .chat-header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
-  .chat-messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 9px; }
-  .msg { max-width: 70%; padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.4; }
-  .msg.user { align-self: flex-start; background: #f1f0ec; }
-  .msg.assistant { align-self: flex-end; background: #e3f4ec; }
-  .msg.human { align-self: flex-end; background: #fff2df; }
-  .msg .role-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-  .chat-input { display: flex; gap: 8px; padding: 14px; border-top: 1px solid var(--line); }
-  .chat-input input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
-  .chat-input button { padding: 9px 18px; border: none; background: var(--accent); color: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
-  .takeover-note { font-size: 11.5px; color: var(--muted); padding: 0 14px 12px; }
-  .log { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #fbfbf9; }
-  .log-row { padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 12px; display: flex; gap: 10px; align-items: flex-start; }
+
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12.5px; font-weight: 600; border: 1px solid; }
+  .pill.new { color: #1a4f8f; border-color: #bcd2ec; background: #eaf2fb; }
+  .pill.interested { color: var(--live); border-color: #b4d9cb; background: #e8f4ef; }
+  .pill.not_interested { color: var(--stop); border-color: #e7bfbc; background: #fbeeed; }
+  .pill.booked { color: var(--watch); border-color: #e6cfa6; background: #fdf4e6; }
+  .pill.completed { color: var(--ink-soft); border-color: var(--rule); background: #f2f4f3; }
+  .pill.ch-whatsapp { color: var(--live); border-color: #b4d9cb; background: #e8f4ef; }
+  .pill.ch-instagram { color: #8b2a74; border-color: #e3c2dc; background: #fbeef8; }
+
+  .empty { padding: 44px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
+  .empty b { display: block; color: var(--ink); font-size: 15.5px; margin-bottom: 3px; }
+
+  /* ---------------- Inbox ---------------- */
+
+  .inbox { display: grid; grid-template-columns: 290px 1fr; gap: 14px; height: 580px; }
+  .thread-list { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; overflow-y: auto; }
+  .thread-list button { display: block; width: 100%; text-align: left; padding: 12px 15px; border: none; border-bottom: 1px solid var(--rule); background: none; cursor: pointer; }
+  .thread-list button:hover { background: #f7f9f8; }
+  .thread-list button[aria-current="true"] { background: #e8f4ef; }
+  .thread-list .who { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .thread-list .who > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thread-list .last { display: block; font-size: 13px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+  .thread { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; }
+  .thread-head { padding: 13px 18px; border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .thread-body { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 9px; }
+  .bubble { max-width: 74%; padding: 9px 13px; border-radius: 13px; font-size: 14.5px; line-height: 1.45; }
+  .bubble .src { font-size: 12px; color: var(--ink-soft); margin-bottom: 2px; }
+  .bubble.user { align-self: flex-start; background: #f2f4f3; border-bottom-left-radius: 4px; }
+  .bubble.assistant { align-self: flex-end; background: #e8f4ef; border-bottom-right-radius: 4px; }
+  .bubble.human { align-self: flex-end; background: #fdf4e6; border-bottom-right-radius: 4px; }
+  .thread-send { display: flex; gap: 8px; padding: 13px; border-top: 1px solid var(--rule); }
+  .thread-send input { flex: 1; }
+
+  /* ---------------- Log ---------------- */
+
+  .log { border: 1px solid var(--rule); border-radius: 8px; max-height: 420px; overflow-y: auto; background: #fbfcfc; }
+  .log-row { padding: 10px 14px; border-bottom: 1px solid var(--rule); font-size: 13.5px; display: grid; grid-template-columns: auto auto 1fr; gap: 11px; align-items: start; }
   .log-row:last-child { border-bottom: none; }
-  .log-row .when { color: var(--muted); white-space: nowrap; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; }
-  .log-row .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; white-space: nowrap; }
-  .log-row.error .tag { background: #fdeaea; color: var(--danger); }
-  .log-row.warn .tag { background: #fff4e0; color: #a56b0c; }
-  .log-row.info .tag { background: #ececea; color: #555; }
-  .log-row .body { flex: 1; word-break: break-word; }
-  .log-row .scope { font-weight: 600; margin-right: 6px; }
-  .log-row details summary { cursor: pointer; color: var(--muted); font-size: 11px; margin-top: 4px; }
-  .log-row pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); margin: 6px 0 0; }
-  .banner { padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500; margin-bottom: 12px; display: none; }
-  .banner.show { display: block; }
-  .banner.bad { background: #fdeaea; color: var(--danger); }
-  .banner.good { background: #e3f4ec; color: var(--accent-dark); }
-  .big-status { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; margin-bottom: 4px; }
-  .big-status .status-dot { width: 12px; height: 12px; margin: 0; }
-  .status-help { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  .how { background: #f1f0ec; border-radius: 8px; padding: 11px 14px; font-size: 13px; line-height: 1.6; margin: 14px 0; }
-  .how b { font-weight: 600; }
-  details.tech { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-  details.tech summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); }
-  details.tech .inner { padding-top: 12px; }
-  .topbar { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 20px; font-size: 12.5px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); margin-left: auto; }
-  .pill .status-dot { margin: 0; }
-  .alert { display: none; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; background: #fdeaea; color: var(--danger); font-size: 13px; font-weight: 600; margin-bottom: 16px; flex-wrap: wrap; }
-  .alert.show { display: flex; }
-  .alert button { margin-left: auto; }
+  .log-row .at { color: var(--ink-soft); white-space: nowrap; font-size: 13px; }
+  .log-row .lvl { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 20px; white-space: nowrap; }
+  .log-row.error .lvl { background: #fbeeed; color: var(--stop); }
+  .log-row.warn .lvl { background: #fdf4e6; color: var(--watch); }
+  .log-row.info .lvl { background: #f2f4f3; color: var(--ink-soft); }
+  .log-row .what { word-break: break-word; }
+  .log-row .what .where { font-weight: 600; }
+  .log-row details summary { cursor: pointer; color: var(--ink-soft); font-size: 12.5px; margin-top: 3px; }
+  .log-row pre { white-space: pre-wrap; font-size: 12.5px; color: var(--ink-soft); margin: 5px 0 0; }
+
+  details.more { margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 14px; }
+  details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details.more > div { padding-top: 14px; }
+
+  .view { display: none; }
+  .view.on { display: block; }
+
+  .pair-code { font-size: 32px; font-weight: 700; letter-spacing: 5px; background: #f2f4f3; padding: 11px 17px; border-radius: 8px; display: inline-block; }
+  .qr-img { width: 232px; height: 232px; border: 1px solid var(--rule); border-radius: 8px; background: #fff; }
+
+  .tabbar { display: none; }
+
+  /* ---------------- Mobile ---------------- */
+
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { display: none; }
+    main { padding: 18px 16px calc(84px + env(safe-area-inset-bottom)); }
+    .inbox { grid-template-columns: 1fr; height: auto; }
+    .thread-list { max-height: 210px; }
+    .thread { height: 440px; }
+    .panel { padding: 17px 16px; border-radius: 8px; }
+    .bubble { max-width: 88%; }
+
+    .tabbar {
+      display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      background: var(--ink); padding: 7px 4px calc(7px + env(safe-area-inset-bottom));
+    }
+    .tabbar button {
+      border: none; background: none; color: #8aa49d; cursor: pointer;
+      padding: 5px 2px; font-size: 11.5px; font-weight: 600;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+    }
+    .tabbar button[aria-current="page"] { color: #fff; }
+    .tabbar svg { width: 21px; height: 21px; }
+    .mobile-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .mobile-head .brand { padding: 0; font-size: 16px; color: var(--ink); }
+  }
+  @media (min-width: 861px) { .mobile-head { display: none; } }
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <div>
-      <h1>KSC Carpets - Leads</h1>
-      <div class="sub" style="margin-bottom:0">WhatsApp enquiries, auto-updated and answered by AI.</div>
+
+<div class="shell">
+  <nav class="rail" aria-label="Sections">
+    <div class="brand">Automation console</div>
+    <div class="brand-sub" id="railBiz">Loading…</div>
+
+    <div class="rail-group">
+      <a data-view="overview" aria-current="page">Overview</a>
     </div>
-    <!-- At-a-glance status. Everything technical lives in the Settings tab, so
-         this pill is the only connection info on the leads screen. -->
-    <span class="pill"><span class="status-dot" id="headerDot"></span><span id="headerStatus">Checking...</span></span>
-  </div>
 
-  <!-- Only ever shown when the bot genuinely cannot work. Otherwise the client
-       never sees anything about sessions, codes or errors. -->
-  <div class="alert" id="topAlert">
-    <span id="topAlertText"></span>
-    <button class="save-btn danger" id="goToSettingsBtn">Fix it</button>
-  </div>
-
-  <div class="tabs">
-    <button data-tab="leads" class="active">Leads</button>
-    <button data-tab="chats">Chats</button>
-    <button data-tab="settings">Settings</button>
-  </div>
-
-  <div id="settingsView" style="display:none">
-
-  <div class="panel">
-    <p class="panel-title">WhatsApp connection</p>
-
-    <div class="big-status">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusHeadline">Checking...</span>
+    <div class="rail-group">
+      <h2>Channels</h2>
+      <a data-view="whatsapp"><span class="dot" id="railWaDot"></span> WhatsApp</a>
+      <a data-view="instagram"><span class="dot" id="railIgDot"></span> Instagram</a>
+      <a data-view="channels">More channels</a>
     </div>
-    <div class="status-help" id="statusHelp"></div>
 
-    <div id="linkArea" style="display:none">
-      <div class="how">
-        <b>On the KSC Carpets phone:</b> open WhatsApp &rarr; Settings &rarr; Linked Devices &rarr; <b>Link a device</b>.<br>
-        Then use one of the two options below.
+    <div class="rail-group">
+      <h2>Work</h2>
+      <a data-view="leads">Leads <span class="count" id="railLeadCount"></span></a>
+      <a data-view="inbox">Inbox</a>
+    </div>
+
+    <div class="rail-foot">
+      <a data-view="settings">Settings</a>
+      <a data-view="activity">Activity <span class="count" id="railErrCount"></span></a>
+      <a href="/logout">Sign out</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="mobile-head">
+      <div class="brand">Automation console</div>
+      <a class="btn quiet small" href="/logout" style="text-decoration:none">Sign out</a>
+    </div>
+
+    <div class="alert bad" id="topAlert" role="status">
+      <strong id="topAlertTitle">Needs attention</strong>
+      <span id="topAlertText"></span>
+    </div>
+
+    <!-- ============ Overview ============ -->
+    <section class="view on" id="view-overview">
+      <div class="headline">
+        <h1><span class="beacon" id="beacon"></span><span id="bigStatus">Checking…</span></h1>
+        <p id="bigStatusHelp">Reading the state of every channel.</p>
       </div>
 
-      <div class="link-tabs">
-        <button data-link="qr" class="active">Scan a QR code</button>
-        <button data-link="code">Type a code instead</button>
+      <div class="tiles" id="tiles"></div>
+
+      <div class="panel">
+        <h2>Needs you</h2>
+        <p class="lede">People the bot has handed over, or who asked for a call back.</p>
+        <div id="needsYou"></div>
+      </div>
+    </section>
+
+    <!-- ============ WhatsApp ============ -->
+    <section class="view" id="view-whatsapp">
+      <div class="headline">
+        <h1><span class="beacon" id="waBeacon"></span><span id="waStatus">Checking…</span></h1>
+        <p id="waHelp"></p>
       </div>
 
-      <div id="linkQr" class="qr-box">
-        <p>Point the phone's camera at this square. It refreshes every few seconds - always use the one on screen.</p>
-        <img id="qrImage" style="width:220px; height:220px; border:1px solid var(--line); border-radius:8px; display:none;">
-        <p id="qrWaiting">Waiting for a QR code...</p>
-      </div>
+      <div class="panel">
+        <h2>Connection</h2>
+        <p class="lede" id="waConnectedAs"></p>
 
-      <div id="linkCode" style="display:none">
-        <p class="status-help">Use this when the phone isn't in front of you. On the phone, tap <b>Link with phone number instead</b> first, then press the button here.</p>
-        <span class="field-label">The KSC Carpets WhatsApp number - country code, digits only (e.g. 447911123456)</span>
-        <div class="panel-row" style="margin-top:0">
-          <input type="text" id="pairNumber" placeholder="447911123456" style="max-width:260px">
-          <button class="save-btn" id="pairBtn">Get pairing code</button>
-          <button class="save-btn secondary" id="backToQrBtn">Back to QR</button>
+        <div id="waLinkArea" style="display:none">
+          <h3>Link the phone</h3>
+          <div class="filters" role="group" aria-label="Linking method">
+            <button id="waTabQr" aria-pressed="true">Scan a QR code</button>
+            <button id="waTabPair" aria-pressed="false">Use a code instead</button>
+          </div>
+
+          <div id="waQrPane">
+            <img class="qr-img" id="qrImage" alt="WhatsApp linking QR code" style="display:none">
+            <p class="note" id="qrWaiting">Waiting for a new QR code — this page refreshes it on its own.</p>
+            <ol class="steps">
+              <li>Open WhatsApp on the phone.</li>
+              <li>Go to Settings, then Linked devices.</li>
+              <li>Tap Link a device and scan the square above.</li>
+            </ol>
+          </div>
+
+          <div id="waPairPane" style="display:none">
+            <label class="field">
+              <span>Phone number</span>
+              <em>Country code and number together, no plus or spaces. For example 447700900123.</em>
+              <input type="text" id="pairNumber" inputmode="numeric" placeholder="447700900123">
+            </label>
+            <div class="row">
+              <button class="btn" id="pairBtn">Get a pairing code</button>
+              <span class="note warn" id="pairError"></span>
+            </div>
+            <div id="pairResult" style="display:none; margin-top:14px">
+              <div class="pair-code" id="pairCode">------</div>
+              <p class="note" id="pairAge"></p>
+              <ol class="steps">
+                <li>Open WhatsApp, then Settings, then Linked devices.</li>
+                <li>Tap Link a device, then Link with phone number instead.</li>
+                <li>Type the code above.</li>
+              </ol>
+            </div>
+          </div>
         </div>
-        <div id="pairResult" style="display:none">
-          <div class="pair-code" id="pairCode"></div>
-          <div class="meta-line" id="pairAge" style="margin-top:6px;"></div>
-          <ol class="steps">
-            <li>Make sure the phone is already on the "Enter code" screen.</li>
-            <li>Type the code above - it expires in about two minutes.</li>
-            <li>If it's refused, press "Get pairing code" again for a fresh one.</li>
-          </ol>
-        </div>
-        <div class="meta-line" id="pairError" style="color:var(--danger); margin-top:8px;"></div>
+
+        <details class="more">
+          <summary>Technical details</summary>
+          <div>
+            <p class="note" id="waSessionInfo"></p>
+            <p class="note" id="waLastDisconnect"></p>
+            <div class="row" style="margin-top:14px">
+              <button class="btn quiet" id="backupNowBtn">Save login to Sheet now</button>
+              <button class="btn quiet" id="reconnectBtn">Reconnect now</button>
+              <button class="btn risk" id="relinkBtn">Unlink and start over</button>
+            </div>
+          </div>
+        </details>
       </div>
-    </div>
+    </section>
 
-    <details class="tech">
-      <summary>Technical details</summary>
-      <div class="inner">
-        <div class="meta-line" id="connectedAs"></div>
-        <div class="meta-line" id="sessionInfo" style="margin-top:4px;"></div>
-        <div class="meta-line" id="lastDisconnect" style="margin-top:4px;"></div>
-        <div class="panel-row" style="margin-top:12px">
-          <button class="save-btn secondary" id="backupNowBtn">Save login to Sheet now</button>
-          <button class="save-btn secondary" id="reconnectBtn">Reconnect now</button>
-          <button class="save-btn danger" id="relinkBtn">Unlink &amp; start over</button>
+    <!-- ============ Instagram ============ -->
+    <section class="view" id="view-instagram">
+      <div class="headline">
+        <h1><span class="beacon" id="igBeacon"></span><span id="igStatus">Checking…</span></h1>
+        <p id="igHelp"></p>
+      </div>
+
+      <div class="panel">
+        <h2>Setup</h2>
+        <p class="lede">Instagram replies run on Meta's official API. Each item below has to be done once.</p>
+        <div id="igChecklist"></div>
+
+        <details class="more">
+          <summary>Where the webhook URL goes</summary>
+          <div>
+            <p class="note">In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:</p>
+            <p class="note" style="margin-top:8px"><b id="igWebhookUrl">—</b></p>
+            <p class="note" style="margin-top:8px">Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="panel">
+        <h2>How it answers</h2>
+        <p class="lede">What the bot knows about the business, and how it should reply in DMs.</p>
+
+        <label class="switch">
+          <input type="checkbox" id="igBotEnabled">
+          <span class="track"></span>
+          <span class="label"><b>Reply to Instagram DMs</b><span>Turn off to stop replies without unlinking anything.</span></span>
+        </label>
+
+        <label class="field">
+          <span>Instructions for the bot</span>
+          <em>Leave empty to use the built-in general-purpose instructions.</em>
+          <textarea id="igSystemPrompt" rows="9" placeholder="Leave empty to use the default instructions."></textarea>
+        </label>
+
+        <div class="row">
+          <button class="btn" id="igSaveBtn">Save changes</button>
+          <span class="saved" id="igSaved"></span>
         </div>
       </div>
-    </details>
-  </div>
 
-  <div class="panel">
-    <p class="panel-title">Bot controls</p>
-    <div class="panel-row">
-      <label class="toggle-label">
-        <span class="switch"><input type="checkbox" id="botEnabledToggle"><span class="slider"></span></span>
-        Automated replies
-      </label>
-      <label class="toggle-label">
-        <span class="switch"><input type="checkbox" id="followupEnabledToggle"><span class="slider"></span></span>
-        Follow-ups
-      </label>
-      <label class="toggle-label">
-        <span class="switch"><input type="checkbox" id="reviewReminderToggle"><span class="slider"></span></span>
-        Review reminders
-      </label>
-      <button class="save-btn secondary" id="runNowBtn" style="margin-left:auto;">Send follow-ups / reviews now</button>
-    </div>
-  </div>
+      <div class="panel">
+        <h2>What Instagram allows</h2>
+        <p class="lede">Limits set by Meta, not by this software.</p>
+        <ul class="steps">
+          <li>The bot can only reply within 24 hours of someone messaging. It can never message first.</li>
+          <li>Around 200 automated messages per hour, per account.</li>
+          <li>The account must be a professional one — Business or Creator, not personal.</li>
+          <li>Until Meta approves the app, only accounts added as testers can use it.</li>
+        </ul>
+      </div>
+    </section>
 
-  <div class="panel">
-    <p class="panel-title">Notify me about new enquiries</p>
-    <div class="panel-row" style="display:block">
-      <span class="field-label">Your WhatsApp number (gets a message the moment a lead completes an enquiry)</span>
-      <input type="text" id="adminNotificationNumber" placeholder="e.g. 447xxxxxxxxx">
-    </div>
-  </div>
+    <!-- ============ More channels ============ -->
+    <section class="view" id="view-channels">
+      <div class="headline">
+        <h1>More channels</h1>
+        <p>What else this console can be extended to answer on, and what each one needs first.</p>
+      </div>
+      <div class="panel">
+        <h2>Ready to add</h2>
+        <table>
+          <thead><tr><th>Channel</th><th>What it needs</th></tr></thead>
+          <tbody>
+            <tr><td><b>Telegram</b></td><td>A bot token from BotFather. Nothing else — no review, no approval.</td></tr>
+            <tr><td><b>Email</b></td><td>A Gmail app password, or any SMTP login.</td></tr>
+            <tr><td><b>Facebook Messenger</b></td><td>The same Meta app as Instagram, plus the Page.</td></tr>
+            <tr><td><b>Instagram posting</b></td><td>The same Meta app and token already used for DMs.</td></tr>
+          </tbody>
+        </table>
+        <h3>Harder than it looks</h3>
+        <p class="note"><b>LinkedIn.</b> Posting through the API needs LinkedIn's own app review, and they turn down most small applications. Worth trying, but not worth promising.</p>
+        <h3>Needs a paid service</h3>
+        <p class="note"><b>SMS and phone calls.</b> Both need a Twilio account with credit on it.</p>
+      </div>
+    </section>
 
-  <div class="panel">
-    <div class="panel-row">
-      <button class="save-btn" id="saveSettingsBtn">Save settings</button>
-      <span class="saved-note" id="savedNote" style="display:none">Saved</span>
-    </div>
-  </div>
+    <!-- ============ Leads ============ -->
+    <section class="view" id="view-leads">
+      <div class="headline">
+        <h1>Leads</h1>
+        <p>Everyone who has messaged, on any channel.</p>
+      </div>
+      <div class="filters" role="group" aria-label="Filter leads">
+        <button data-filter="all" aria-pressed="true">All</button>
+        <button data-filter="new" aria-pressed="false">New</button>
+        <button data-filter="interested" aria-pressed="false">Interested</button>
+        <button data-filter="booked" aria-pressed="false">Booked</button>
+        <button data-filter="completed" aria-pressed="false">Completed</button>
+        <button data-filter="not_interested" aria-pressed="false">Not interested</button>
+        <span class="note" id="leadsUpdated" style="margin-left:auto"></span>
+      </div>
+      <div class="table-wrap" id="leadsWrap"></div>
+    </section>
 
-  <div class="panel">
-    <p class="panel-title">Activity &amp; errors</p>
-    <div class="panel-row">
-      <span class="meta-line" id="errorCounts"></span>
-      <label class="toggle-label" style="margin-left:auto;">
-        <span class="switch"><input type="checkbox" id="errorsOnlyToggle"><span class="slider"></span></span>
-        Errors only
-      </label>
-      <button class="save-btn secondary" id="refreshLogBtn">Refresh</button>
-      <button class="save-btn secondary" id="clearLogBtn">Clear</button>
-    </div>
-    <div class="log" id="logBox"></div>
-  </div>
+    <!-- ============ Inbox ============ -->
+    <section class="view" id="view-inbox">
+      <div class="headline">
+        <h1>Inbox</h1>
+        <p>Read any conversation, and take over from the bot when you want to answer yourself.</p>
+      </div>
+      <div class="inbox">
+        <div class="thread-list" id="threadList"></div>
+        <div class="thread">
+          <div class="thread-head">
+            <b id="threadWho">Pick a conversation</b>
+            <label class="switch" style="margin:0 0 0 auto">
+              <input type="checkbox" id="takeoverToggle" disabled>
+              <span class="track"></span>
+              <span class="label"><b>I'll answer this one</b></span>
+            </label>
+          </div>
+          <div class="thread-body" id="threadBody">
+            <div class="empty"><b>Nothing open</b>Choose someone on the left to read the conversation.</div>
+          </div>
+          <div class="thread-send">
+            <input type="text" id="threadInput" placeholder="Write a reply…" disabled>
+            <button class="btn" id="threadSend" disabled>Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  </div><!-- /settingsView -->
+    <!-- ============ Settings ============ -->
+    <section class="view" id="view-settings">
+      <div class="headline">
+        <h1>Settings</h1>
+        <p>Turn the bot on or off, and control the messages it sends on its own.</p>
+      </div>
 
-  <div id="leadsView">
-  <div class="filters" id="filters">
-    <button data-filter="all" class="active">All</button>
-    <button data-filter="new">New</button>
-    <button data-filter="interested">Interested</button>
-    <button data-filter="booked">Booked</button>
-    <button data-filter="completed">Completed</button>
-    <button data-filter="not_interested">Not interested</button>
-    <span class="refresh" id="refreshLabel"></span>
-  </div>
+      <div class="panel">
+        <h2>The bot</h2>
+        <label class="switch">
+          <input type="checkbox" id="botEnabled">
+          <span class="track"></span>
+          <span class="label"><b>Answer WhatsApp messages</b><span>Off means messages arrive but get no reply.</span></span>
+        </label>
+        <label class="field">
+          <span>Alert this number about new leads</span>
+          <em>Country code and number, no plus. Leave empty for no alerts.</em>
+          <input type="text" id="adminNotificationNumber" inputmode="numeric" placeholder="447700900123">
+        </label>
+        <div class="row">
+          <button class="btn" id="saveBotBtn">Save changes</button>
+          <span class="saved" id="savedBot"></span>
+        </div>
+      </div>
 
-  <table id="table">
-    <thead>
-      <tr>
-        <th>Name</th><th>Phone</th><th>Status</th><th>Carpet</th><th>Room</th><th>Size</th>
-        <th>Colour</th><th>Budget</th><th>Preferred time</th><th>Address</th><th>Postcode</th>
-        <th>Contact number</th><th>Last contacted</th><th>Change status</th><th></th>
-      </tr>
-    </thead>
-    <tbody id="rows"></tbody>
-  </table>
-  <div class="empty" id="empty" style="display:none">No leads yet.</div>
-  </div>
-
-  <div id="chatsView" style="display:none">
-    <div class="chat-layout">
-      <div class="chat-list" id="chatList"></div>
-      <div class="chat-panel">
-        <div class="chat-header" id="chatHeader">
-          <span id="chatHeaderName" style="font-size:14px; font-weight:600;">Select a conversation</span>
-          <label class="toggle-label" style="margin-left:auto; display:none;" id="takeoverLabel">
-            <span class="switch"><input type="checkbox" id="takeoverToggle"><span class="slider"></span></span>
-            I'm replying manually
+      <div class="panel">
+        <h2>Follow-ups</h2>
+        <p class="lede">A nudge to people who showed interest but went quiet.</p>
+        <label class="switch">
+          <input type="checkbox" id="followupEnabled">
+          <span class="track"></span>
+          <span class="label"><b>Send follow-ups</b></span>
+        </label>
+        <label class="field">
+          <span>Message</span>
+          <em>Write {name} where their name should go.</em>
+          <textarea id="followupMessage" rows="3"></textarea>
+        </label>
+        <div class="row">
+          <label class="field" style="flex:1; min-width:150px; margin:0">
+            <span>Wait this many hours</span>
+            <input type="number" id="followupDelayHours" min="1">
+          </label>
+          <label class="field" style="flex:1; min-width:150px; margin:0">
+            <span>Send at most</span>
+            <input type="number" id="followupMaxAttempts" min="1">
           </label>
         </div>
-        <div class="chat-messages" id="chatMessages"></div>
-        <div class="takeover-note" id="takeoverNote" style="display:none">AI is paused for this chat - your replies here go straight to the customer.</div>
-        <div class="chat-input">
-          <input type="text" id="chatInput" placeholder="Type a message...">
-          <button id="chatSendBtn">Send</button>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="saveFollowupBtn">Save changes</button>
+          <button class="btn quiet" id="runNowBtn">Run follow-ups now</button>
+          <span class="saved" id="savedFollowup"></span>
         </div>
       </div>
-    </div>
-  </div>
+
+      <div class="panel">
+        <h2>Review reminders</h2>
+        <p class="lede">A second ask for a Google review, for people who were asked once and did not leave one.</p>
+        <label class="switch">
+          <input type="checkbox" id="reviewReminderEnabled">
+          <span class="track"></span>
+          <span class="label"><b>Send review reminders</b></span>
+        </label>
+        <label class="field">
+          <span>Message</span>
+          <em>Write {name} for their name and {reviewLink} for the review link.</em>
+          <textarea id="reviewReminderMessage" rows="3"></textarea>
+        </label>
+        <div class="row">
+          <label class="field" style="flex:1; min-width:150px; margin:0">
+            <span>Wait this many hours</span>
+            <input type="number" id="reviewReminderDelayHours" min="1">
+          </label>
+          <label class="field" style="flex:1; min-width:150px; margin:0">
+            <span>Send at most</span>
+            <input type="number" id="reviewReminderMaxAttempts" min="1">
+          </label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="saveReviewBtn">Save changes</button>
+          <span class="saved" id="savedReview"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Activity ============ -->
+    <section class="view" id="view-activity">
+      <div class="headline">
+        <h1>Activity</h1>
+        <p>Everything the system has recorded, newest first.</p>
+      </div>
+      <div class="panel">
+        <div class="row" style="margin-bottom:14px">
+          <label class="switch" style="margin:0">
+            <input type="checkbox" id="onlyErrors">
+            <span class="track"></span>
+            <span class="label"><b>Problems only</b></span>
+          </label>
+          <button class="btn quiet small" id="clearLogBtn" style="margin-left:auto">Clear</button>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="tabbar" aria-label="Sections">
+  <button data-view="overview" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+    Home
+  </button>
+  <button data-view="leads">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="8" r="4"/></svg>
+    Leads
+  </button>
+  <button data-view="inbox">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Inbox
+  </button>
+  <button data-view="settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+    Settings
+  </button>
+  <button data-view="activity">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+    Activity
+  </button>
+</nav>
 
 <script>
-let allLeads = [];
-let activeFilter = 'all';
+'use strict';
 
-function escapeHtml(str) {
-  return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
+/* ---------------- helpers ---------------- */
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function when(iso) {
-  if (!iso) return 'never';
-  try { return new Date(iso).toLocaleString(); } catch (e) { return String(iso); }
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  if (mins < 1440) return Math.round(mins / 60) + 'h ago';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-/* ----------------------------- Leads ----------------------------- */
-
-async function loadLeads() {
-  const res = await fetch('/api/leads');
-  if (!res.ok) return;
-  allLeads = await res.json();
-  render();
-  document.getElementById('refreshLabel').textContent = 'Updated ' + new Date().toLocaleTimeString();
+/** An "ig:" lead key is an Instagram thread; anything else is WhatsApp. */
+function channelOf(key) { return String(key).startsWith('ig:') ? 'instagram' : 'whatsapp'; }
+function displayName(lead) {
+  if (lead.name) return lead.name;
+  return channelOf(lead.phone) === 'instagram'
+    ? 'Instagram user ' + String(lead.phone).replace(/^ig:/, '').slice(-4)
+    : String(lead.phone);
 }
 
-function render() {
-  const rows = document.getElementById('rows');
-  const empty = document.getElementById('empty');
-  const filtered = activeFilter === 'all' ? allLeads : allLeads.filter(l => l.status === activeFilter);
-
-  rows.innerHTML = '';
-  empty.style.display = filtered.length ? 'none' : 'block';
-
-  for (const lead of filtered) {
-    const tr = document.createElement('tr');
-    const status = lead.status || 'new';
-    tr.innerHTML = `
-      <td>${escapeHtml(lead.name || '-')}</td>
-      <td>${escapeHtml(lead.phone || '-')}</td>
-      <td><span class="badge ${status}">${status.replace('_',' ')}</span></td>
-      <td>${escapeHtml(lead.carpetType || '-')}</td>
-      <td>${escapeHtml(lead.room || '-')}</td>
-      <td>${escapeHtml(lead.size || '-')}</td>
-      <td>${escapeHtml(lead.colour || '-')}</td>
-      <td>${escapeHtml(lead.budget || '-')}</td>
-      <td>${escapeHtml(lead.preferredTime || '-')}</td>
-      <td>${escapeHtml(lead.customerAddress || '-')}</td>
-      <td>${escapeHtml(lead.postcode || '-')}</td>
-      <td>${escapeHtml(lead.contactNumber || '-')}</td>
-      <td>${lead.lastContacted ? when(lead.lastContacted) : ''}</td>
-      <td>
-        <select data-phone="${escapeHtml(lead.phone)}" class="status-select">
-          <option value="new" ${status === 'new' ? 'selected' : ''}>New</option>
-          <option value="interested" ${status === 'interested' ? 'selected' : ''}>Interested</option>
-          <option value="booked" ${status === 'booked' ? 'selected' : ''}>Booked</option>
-          <option value="completed" ${status === 'completed' ? 'selected' : ''}>Completed</option>
-          <option value="not_interested" ${status === 'not_interested' ? 'selected' : ''}>Not interested</option>
-        </select>
-      </td>
-      <td><button class="save-btn danger" style="padding:5px 10px; font-size:12px;" data-phone="${escapeHtml(lead.phone)}">Delete</button></td>
-    `;
-    tr.querySelector('.status-select').addEventListener('change', async (e) => {
-      await fetch('/api/leads/' + encodeURIComponent(lead.phone) + '/status', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: e.target.value }),
-      });
-      loadLeads();
-    });
-    tr.querySelector('button[data-phone]').addEventListener('click', async () => {
-      if (!confirm(`Delete ${lead.name || lead.phone}? This removes the lead and its whole chat history permanently.`)) return;
-      await fetch('/api/leads/' + encodeURIComponent(lead.phone), { method: 'DELETE' });
-      loadLeads();
-    });
-    rows.appendChild(tr);
-  }
+async function getJson(url) {
+  const res = await fetch(url);
+  if (res.status === 401) { window.location.href = '/login'; return null; }
+  if (!res.ok) return null;
+  return res.json();
 }
 
-document.getElementById('filters').addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  document.querySelectorAll('#filters button').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-  activeFilter = e.target.dataset.filter;
-  render();
-});
-
-/* ----------------------------- Connection ----------------------------- */
-
-let linkMode = 'qr';
-
-document.querySelectorAll('.link-tabs button').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.link-tabs button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    linkMode = btn.dataset.link;
-    document.getElementById('linkQr').style.display = linkMode === 'qr' ? 'flex' : 'none';
-    document.getElementById('linkCode').style.display = linkMode === 'code' ? 'block' : 'none';
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function flash(el, text) {
+  el.textContent = text;
+  setTimeout(() => { el.textContent = ''; }, 2600);
+}
+
+/* ---------------- navigation ---------------- */
+
+const VIEWS = ['overview', 'whatsapp', 'instagram', 'channels', 'leads', 'inbox', 'settings', 'activity'];
+let currentView = 'overview';
+
+function showView(name, fromHash) {
+  if (!VIEWS.includes(name)) name = 'overview';
+  currentView = name;
+  // Keep the section in the address bar, so a reload (or a bookmark on a
+  // phone) comes back to the same place instead of jumping home.
+  if (!fromHash && window.location.hash !== '#' + name) {
+    window.history.replaceState(null, '', '#' + name);
+  }
+  VIEWS.forEach((v) => {
+    const el = document.getElementById('view-' + v);
+    if (el) el.classList.toggle('on', v === name);
+  });
+  document.querySelectorAll('.rail a[data-view], .tabbar button[data-view]').forEach((el) => {
+    if (el.dataset.view === name) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  });
+  window.scrollTo(0, 0);
+  if (name === 'leads') loadLeads();
+  if (name === 'inbox') loadThreads();
+  if (name === 'activity') loadLog();
+  if (name === 'instagram') loadInstagram();
+}
+
+document.querySelectorAll('.rail a[data-view], .tabbar button[data-view]').forEach((el) => {
+  el.addEventListener('click', () => showView(el.dataset.view));
 });
 
-async function loadStatus() {
-  const res = await fetch('/api/status');
-  if (!res.ok) return;
-  const s = await res.json();
+/* ---------------- overview + WhatsApp status ---------------- */
 
-  // Plain-language status first - the client should never have to decode a
-  // status code to know whether the bot is answering customers right now.
-  const dot = document.getElementById('statusDot');
-  dot.className = 'status-dot ' + s.whatsapp;
+let lastStatus = null;
+let lastIg = null;
 
-  // Header pill + alert: the only connection signals on the Leads screen.
-  document.getElementById('headerDot').className = 'status-dot ' + s.whatsapp;
-  document.getElementById('headerStatus').textContent = s.connected
-    ? 'WhatsApp connected'
-    : (s.needsRelink ? 'WhatsApp not linked' : 'WhatsApp reconnecting');
+function paintOverview() {
+  const s = lastStatus || {};
+  const ig = lastIg || {};
+
+  const waState = s.connected ? 'live' : (s.whatsapp === 'connecting' ? 'watch' : 'stop');
+  const igConfigured = ig.configured === true;
+  const igState = !igConfigured ? 'off' : (ig.connected ? 'live' : 'stop');
+
+  document.getElementById('railWaDot').className = 'dot ' + waState;
+  document.getElementById('railIgDot').className = 'dot ' + (igState === 'off' ? '' : igState);
+
+  // One plain sentence, because that is the whole question being asked.
+  const broken = [];
+  if (waState === 'stop') broken.push('WhatsApp');
+  if (igState === 'stop') broken.push('Instagram');
+
+  const beacon = document.getElementById('beacon');
+  const title = document.getElementById('bigStatus');
+  const help = document.getElementById('bigStatusHelp');
+
+  if (broken.length) {
+    beacon.className = 'beacon stop';
+    title.textContent = broken.join(' and ') + (broken.length > 1 ? ' need attention' : ' needs attention');
+    help.textContent = 'Messages on ' + broken.join(' and ') + ' are not being answered right now.';
+  } else if (waState === 'watch') {
+    beacon.className = 'beacon watch';
+    title.textContent = 'Reconnecting';
+    help.textContent = 'WhatsApp dropped and is coming back. This usually sorts itself out in a minute.';
+  } else {
+    beacon.className = 'beacon live';
+    title.textContent = 'Everything is running';
+    help.textContent = igConfigured
+      ? 'WhatsApp and Instagram are both answering messages.'
+      : 'WhatsApp is answering messages. Instagram is not set up yet.';
+  }
+
+  const tiles = [
+    {
+      view: 'whatsapp', name: 'WhatsApp', state: waState,
+      label: s.connected ? 'Connected' : (s.needsRelink ? 'Not linked' : 'Reconnecting'),
+      figure: null,
+    },
+    {
+      view: 'instagram', name: 'Instagram', state: igState,
+      label: !igConfigured ? 'Not set up' : (ig.connected ? 'Connected' : (ig.reason || 'Not connected')),
+      figure: igConfigured ? { n: ig.received || 0, unit: 'DMs received' } : null,
+    },
+    {
+      view: 'channels', name: 'Other channels', state: 'off',
+      label: 'Telegram, email, Messenger', figure: null,
+    },
+  ];
+
+  document.getElementById('tiles').innerHTML = tiles.map((t) => `
+    <button class="tile ${t.state}" data-go="${t.view}">
+      <span class="name"><span class="dot ${t.state === 'off' ? '' : t.state}"></span>${esc(t.name)}</span>
+      <span class="state">${esc(t.label)}</span>
+      ${t.figure ? `<span class="figure">${t.figure.n}<small>${esc(t.figure.unit)}</small></span>` : ''}
+    </button>`).join('');
+
+  document.querySelectorAll('.tile[data-go]').forEach((el) => {
+    el.addEventListener('click', () => showView(el.dataset.go));
+  });
 
   const alertBox = document.getElementById('topAlert');
-  if (!s.connected && s.needsRelink) {
+  if (waState === 'stop' && s.needsRelink) {
     alertBox.classList.add('show');
-    document.getElementById('topAlertText').textContent =
-      'WhatsApp is not linked - new enquiries are not being answered.';
+    document.getElementById('topAlertTitle').textContent = 'WhatsApp is not linked';
+    document.getElementById('topAlertText').textContent = 'New enquiries are arriving but nothing is answering them. Open WhatsApp to link the phone again.';
   } else {
     alertBox.classList.remove('show');
   }
+}
 
-  const headline = document.getElementById('statusHeadline');
-  const help = document.getElementById('statusHelp');
+async function loadStatus() {
+  const s = await getJson('/api/status');
+  if (!s) return;
+  lastStatus = s;
+
+  const waState = s.connected ? 'live' : (s.whatsapp === 'connecting' ? 'watch' : 'stop');
+  document.getElementById('waBeacon').className = 'beacon ' + waState;
+
+  const title = document.getElementById('waStatus');
+  const help = document.getElementById('waHelp');
   if (s.connected) {
-    headline.textContent = 'Connected';
-    help.innerHTML = s.me
-      ? `The bot is answering customers on <b>${escapeHtml(String(s.me).split(':')[0])}</b>.`
-      : 'The bot is answering customers.';
+    title.textContent = 'Connected';
+    help.textContent = 'The bot is answering customers on WhatsApp.';
   } else if (s.replaced) {
-    headline.textContent = 'Taken over by another copy';
-    help.textContent = 'Another copy of the bot (usually the newest deploy) is using this WhatsApp number, so this copy has paused. If nothing else is running, press "Reconnect now" under Technical details.';
+    title.textContent = 'Another copy took over';
+    help.textContent = 'A newer deploy is using this WhatsApp number, so this copy has paused. If nothing else is running, press Reconnect now under Technical details.';
   } else if (s.needsRelink) {
-    headline.textContent = 'Not linked';
-    help.textContent = 'The bot cannot send or receive anything until the phone is linked again. Follow the steps below.';
+    title.textContent = 'Not linked';
+    help.textContent = 'Nothing can be sent or received until the phone is linked again. Follow the steps below.';
   } else if (s.whatsapp === 'connecting') {
-    headline.textContent = 'Reconnecting...';
-    help.textContent = 'Trying to get back on. This usually sorts itself out in a minute.';
+    title.textContent = 'Reconnecting';
+    help.textContent = 'Trying to get back on.';
   } else {
-    headline.textContent = 'Disconnected';
+    title.textContent = 'Disconnected';
     help.textContent = 'The bot is not answering customers right now.';
   }
 
-  document.getElementById('connectedAs').innerHTML = s.me ? `Linked number: <b>${escapeHtml(String(s.me).split(':')[0])}</b>` : 'No number linked.';
+  document.getElementById('waConnectedAs').innerHTML = s.me
+    ? 'Linked number: <b>' + esc(String(s.me).split(':')[0]) + '</b>'
+    : 'No number linked.';
 
   const sess = s.session || {};
-  let sessionLine = `Login saved in Google Sheet: <b>${sess.keys || 0} key(s)</b>`;
-  sessionLine += sess.pending ? `, <b>${sess.pending}</b> waiting to save` : ', all saved';
-  if (sess.lastSavedAt) sessionLine += ` &middot; last save ${when(sess.lastSavedAt)}`;
-  if (sess.loadedFrom) sessionLine += ` &middot; at startup: <b>${escapeHtml(sess.loadedFrom)}</b>`;
-  if (sess.lastSaveError) sessionLine += ` &middot; <span style="color:var(--danger)">last save failed: ${escapeHtml(sess.lastSaveError)}</span>`;
-  document.getElementById('sessionInfo').innerHTML = sessionLine;
+  let line = 'Login saved in the Google Sheet: <b>' + (sess.keys || 0) + ' key(s)</b>';
+  line += sess.pending ? ', <b>' + sess.pending + '</b> waiting to save' : ', all saved';
+  if (sess.lastSavedAt) line += ' &middot; last save ' + when(sess.lastSavedAt);
+  if (sess.loadedFrom) line += ' &middot; at startup: <b>' + esc(sess.loadedFrom) + '</b>';
+  if (sess.lastSaveError) line += ' &middot; <span class="warn">last save failed: ' + esc(sess.lastSaveError) + '</span>';
+  document.getElementById('waSessionInfo').innerHTML = line;
 
   const ld = s.lastDisconnect;
-  document.getElementById('lastDisconnect').innerHTML = ld
-    ? `Last disconnect: <b>${escapeHtml(String(ld.reason))}</b> (code ${escapeHtml(String(ld.statusCode))}) at ${when(ld.at)} &middot; ${escapeHtml(ld.message || '')}`
+  document.getElementById('waLastDisconnect').innerHTML = ld
+    ? 'Last disconnect: <b>' + esc(String(ld.reason)) + '</b> (code ' + esc(String(ld.statusCode)) + ') at ' + when(ld.at) + ' &middot; ' + esc(ld.message || '')
     : '';
 
-  document.getElementById('linkArea').style.display = (s.connected || !s.needsRelink) ? 'none' : 'block';
+  document.getElementById('waLinkArea').style.display = (s.connected || !s.needsRelink) ? 'none' : 'block';
 
   const img = document.getElementById('qrImage');
   const waiting = document.getElementById('qrWaiting');
@@ -484,38 +887,365 @@ async function loadStatus() {
     const ageSec = s.pairingCodeAt ? Math.round((Date.now() - new Date(s.pairingCodeAt).getTime()) / 1000) : null;
     const ageBox = document.getElementById('pairAge');
     if (ageSec === null) ageBox.textContent = '';
-    else if (ageSec > 150) ageBox.innerHTML = '<span style="color:var(--danger)">This code is likely expired - press "Get pairing code" again.</span>';
-    else ageBox.textContent = `Code generated ${ageSec}s ago - type it within about 2 minutes.`;
+    else if (ageSec > 150) ageBox.innerHTML = '<span class="warn">This code has probably expired — press Get a pairing code again.</span>';
+    else ageBox.textContent = 'Code made ' + ageSec + 's ago. Type it within about two minutes.';
+  }
+
+  const counts = s.errorCounts || {};
+  document.getElementById('railErrCount').textContent = counts.error ? counts.error : '';
+
+  paintOverview();
+}
+
+/* ---------------- Instagram ---------------- */
+
+async function loadInstagram() {
+  const ig = await getJson('/api/instagram/status');
+  if (!ig) return;
+  lastIg = ig;
+
+  const state = !ig.configured ? 'watch' : (ig.connected ? 'live' : 'stop');
+  document.getElementById('igBeacon').className = 'beacon ' + state;
+
+  const title = document.getElementById('igStatus');
+  const help = document.getElementById('igHelp');
+  if (!ig.configured) {
+    title.textContent = 'Not set up yet';
+    help.textContent = 'Add the Meta app details to the environment variables, then this page will show the connection.';
+  } else if (ig.connected) {
+    title.textContent = 'Connected';
+    help.textContent = 'Answering DMs as @' + (ig.username || 'your account') + '.';
+  } else {
+    title.textContent = 'Not connected';
+    help.textContent = ig.reason || 'The access token was rejected by Meta.';
+  }
+
+  const items = [
+    { done: Boolean(ig.accountId), label: 'Instagram professional account linked', detail: ig.accountId ? 'Account ' + ig.accountId : 'Set IG_ACCOUNT_ID' },
+    { done: ig.connected === true, label: 'Access token works', detail: ig.connected ? 'Verified with Meta just now' : (ig.reason || 'Set IG_ACCESS_TOKEN') },
+    { done: Boolean(ig.webhookVerifiedAt), label: 'Webhook verified by Meta', detail: ig.webhookVerifiedAt ? 'Verified ' + when(ig.webhookVerifiedAt) : 'Meta has not called the callback URL yet' },
+    { done: (ig.received || 0) > 0, label: 'A DM has come through', detail: (ig.received || 0) > 0 ? ig.received + ' received, ' + (ig.replied || 0) + ' answered' : 'Send a test DM from another account' },
+  ];
+
+  document.getElementById('igChecklist').innerHTML =
+    '<table><tbody>' + items.map((i) => `
+      <tr>
+        <td style="width:28px"><span class="dot ${i.done ? 'live' : 'stop'}"></span></td>
+        <td><b>${esc(i.label)}</b><br><span class="note">${esc(i.detail)}</span></td>
+      </tr>`).join('') + '</tbody></table>';
+
+  document.getElementById('igWebhookUrl').textContent = window.location.origin + '/webhook/instagram';
+
+  if (ig.lastError) {
+    const h = document.getElementById('igHelp');
+    h.innerHTML = esc(h.textContent) + ' <span class="warn">Last error: ' + esc(ig.lastError) + '</span>';
+  }
+
+  paintOverview();
+}
+
+document.getElementById('igSaveBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  try {
+    await postJson('/api/settings', {
+      igBotEnabled: document.getElementById('igBotEnabled').checked,
+      igSystemPrompt: document.getElementById('igSystemPrompt').value,
+    });
+    flash(document.getElementById('igSaved'), 'Saved');
+  } catch (err) {
+    flash(document.getElementById('igSaved'), err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+/* ---------------- leads ---------------- */
+
+let leads = [];
+let filter = 'all';
+
+async function loadLeads() {
+  const data = await getJson('/api/leads');
+  if (!data) return;
+  leads = data;
+  document.getElementById('railLeadCount').textContent = leads.length || '';
+  renderLeads();
+  renderNeedsYou();
+}
+
+function renderLeads() {
+  const rows = filter === 'all' ? leads : leads.filter((l) => l.status === filter);
+  document.getElementById('leadsUpdated').textContent = rows.length + (rows.length === 1 ? ' lead' : ' leads');
+
+  if (!rows.length) {
+    document.getElementById('leadsWrap').innerHTML =
+      '<div class="empty"><b>Nothing here yet</b>Leads appear as soon as someone messages.</div>';
+    return;
+  }
+
+  document.getElementById('leadsWrap').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Channel</th><th>Wants</th><th>Contact</th><th>Status</th><th>First seen</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((l) => {
+        const ch = channelOf(l.phone);
+        const wants = [l.carpetType, l.room, l.size].filter(Boolean).join(' · ');
+        return `<tr>
+          <td><b>${esc(displayName(l))}</b></td>
+          <td><span class="pill ch-${ch}">${ch === 'instagram' ? 'Instagram' : 'WhatsApp'}</span></td>
+          <td>${esc(wants) || '<span class="note">—</span>'}</td>
+          <td>${esc(l.contactNumber || (ch === 'whatsapp' ? l.phone : '')) || '<span class="note">—</span>'}</td>
+          <td><span class="pill ${esc(l.status)}">${esc(String(l.status).replace('_', ' '))}</span></td>
+          <td class="note">${when(l.createdAt)}</td>
+          <td><button class="btn quiet small" data-open="${esc(l.phone)}">Open</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+
+  document.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => { showView('inbox'); openThread(el.dataset.open); });
+  });
+}
+
+document.querySelectorAll('.filters [data-filter]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    filter = btn.dataset.filter;
+    document.querySelectorAll('.filters [data-filter]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+    renderLeads();
+  });
+});
+
+function renderNeedsYou() {
+  const rows = leads.filter((l) => l.humanTakeover === true || l.priceCallbackNotified === true);
+  const box = document.getElementById('needsYou');
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty"><b>Nothing waiting</b>The bot is handling everything on its own.</div>';
+    return;
+  }
+  box.innerHTML = '<table><tbody>' + rows.map((l) => `
+    <tr>
+      <td><b>${esc(displayName(l))}</b><br><span class="note">${l.humanTakeover ? 'You took this one over' : 'Asked for a call back'}</span></td>
+      <td style="text-align:right"><button class="btn quiet small" data-open="${esc(l.phone)}">Open</button></td>
+    </tr>`).join('') + '</tbody></table>';
+
+  box.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => { showView('inbox'); openThread(el.dataset.open); });
+  });
+}
+
+/* ---------------- inbox ---------------- */
+
+let threads = [];
+let activeKey = null;
+
+async function loadThreads() {
+  const data = await getJson('/api/chats');
+  if (!data) return;
+  threads = data;
+  renderThreadList();
+}
+
+function renderThreadList() {
+  const box = document.getElementById('threadList');
+  if (!threads.length) {
+    box.innerHTML = '<div class="empty"><b>No conversations</b>They show up as people message.</div>';
+    return;
+  }
+  box.innerHTML = threads.map((t) => `
+    <button data-key="${esc(t.phone)}" ${t.phone === activeKey ? 'aria-current="true"' : ''}>
+      <span class="who"><span class="pill ch-${channelOf(t.phone)}" style="padding:0 7px">${channelOf(t.phone) === 'instagram' ? 'IG' : 'WA'}</span><span>${esc(displayName(t))}</span></span>
+      <span class="last">${esc(t.lastMessage || 'No messages yet')}</span>
+    </button>`).join('');
+
+  box.querySelectorAll('[data-key]').forEach((el) => {
+    el.addEventListener('click', () => openThread(el.dataset.key));
+  });
+}
+
+async function openThread(key) {
+  activeKey = key;
+  renderThreadList();
+
+  const lead = threads.find((t) => t.phone === key) || leads.find((l) => l.phone === key) || { phone: key };
+  document.getElementById('threadWho').textContent = displayName(lead);
+
+  const toggle = document.getElementById('takeoverToggle');
+  toggle.disabled = false;
+  toggle.checked = lead.humanTakeover === true;
+
+  document.getElementById('threadInput').disabled = false;
+  document.getElementById('threadSend').disabled = false;
+
+  const messages = await getJson('/api/chats/' + encodeURIComponent(key) + '/messages');
+  const body = document.getElementById('threadBody');
+  if (!messages || !messages.length) {
+    body.innerHTML = '<div class="empty"><b>No messages</b>Nothing has been said in this conversation yet.</div>';
+    return;
+  }
+  body.innerHTML = messages.map((m) => {
+    const role = m.role === 'assistant' ? 'assistant' : (m.role === 'human' ? 'human' : 'user');
+    const src = role === 'assistant' ? 'Bot' : (role === 'human' ? 'You' : '');
+    return `<div class="bubble ${role}">${src ? '<span class="src">' + src + '</span>' : ''}${esc(m.text)}</div>`;
+  }).join('');
+  body.scrollTop = body.scrollHeight;
+}
+
+document.getElementById('takeoverToggle').addEventListener('change', async (e) => {
+  if (!activeKey) return;
+  try {
+    await postJson('/api/chats/' + encodeURIComponent(activeKey) + '/takeover', { humanTakeover: e.target.checked });
+    await loadThreads();
+    await loadLeads();
+  } catch (err) {
+    alert(err.message);
+    e.target.checked = !e.target.checked;
+  }
+});
+
+async function sendReply() {
+  const input = document.getElementById('threadInput');
+  const text = input.value.trim();
+  if (!text || !activeKey) return;
+  const btn = document.getElementById('threadSend');
+  btn.disabled = true;
+  try {
+    await postJson('/api/chats/' + encodeURIComponent(activeKey) + '/send', { text });
+    input.value = '';
+    await openThread(activeKey);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    input.focus();
   }
 }
 
-document.getElementById('relinkBtn').addEventListener('click', async (e) => {
-  if (!confirm('This disconnects the current WhatsApp session and asks for a new QR / pairing code. Continue?')) return;
-  e.target.disabled = true; e.target.textContent = 'Unlinking...';
-  await fetch('/api/whatsapp/relink', { method: 'POST' });
-  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Unlink & start over'; loadStatus(); }, 3000);
+document.getElementById('threadSend').addEventListener('click', sendReply);
+document.getElementById('threadInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendReply();
 });
 
-// Forces a session backup right now - the thing to press straight after a
-// fresh link, to confirm the Sheet really has the session before any restart.
-document.getElementById('backupNowBtn').addEventListener('click', async (e) => {
-  e.target.disabled = true; e.target.textContent = 'Backing up...';
+/* ---------------- settings ---------------- */
+
+const SETTING_FIELDS = [
+  ['botEnabled', 'checkbox'],
+  ['adminNotificationNumber', 'text'],
+  ['followupEnabled', 'checkbox'],
+  ['followupMessage', 'text'],
+  ['followupDelayHours', 'number'],
+  ['followupMaxAttempts', 'number'],
+  ['reviewReminderEnabled', 'checkbox'],
+  ['reviewReminderMessage', 'text'],
+  ['reviewReminderDelayHours', 'number'],
+  ['reviewReminderMaxAttempts', 'number'],
+  ['igBotEnabled', 'checkbox'],
+  ['igSystemPrompt', 'text'],
+];
+
+async function loadSettings() {
+  const s = await getJson('/api/settings');
+  if (!s) return;
+  SETTING_FIELDS.forEach(([id, kind]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (kind === 'checkbox') el.checked = s[id] !== false;
+    else el.value = s[id] === undefined || s[id] === null ? '' : s[id];
+  });
+}
+
+function collect(ids) {
+  const out = {};
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') out[id] = el.checked;
+    else if (el.type === 'number') out[id] = Number(el.value) || 1;
+    else out[id] = el.value;
+  });
+  return out;
+}
+
+function wireSave(btnId, noteId, ids) {
+  document.getElementById(btnId).addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await postJson('/api/settings', collect(ids));
+      flash(document.getElementById(noteId), 'Saved');
+    } catch (err) {
+      flash(document.getElementById(noteId), err.message);
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+}
+
+wireSave('saveBotBtn', 'savedBot', ['botEnabled', 'adminNotificationNumber']);
+wireSave('saveFollowupBtn', 'savedFollowup', ['followupEnabled', 'followupMessage', 'followupDelayHours', 'followupMaxAttempts']);
+wireSave('saveReviewBtn', 'savedReview', ['reviewReminderEnabled', 'reviewReminderMessage', 'reviewReminderDelayHours', 'reviewReminderMaxAttempts']);
+
+document.getElementById('runNowBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  e.target.textContent = 'Running…';
   try {
-    const res = await fetch('/api/whatsapp/backup-session', { method: 'POST' });
-    const data = await res.json();
-    alert(data.ok ? 'Login is fully saved in the Google Sheet.' : 'Some login changes could not be saved yet - see Activity & errors below.');
+    await postJson('/api/run-now');
+    flash(document.getElementById('savedFollowup'), 'Done');
   } catch (err) {
-    alert('Backup failed: ' + err.message);
+    flash(document.getElementById('savedFollowup'), err.message);
   } finally {
-    e.target.disabled = false; e.target.textContent = 'Save login to Sheet now';
-    loadStatus(); loadLog();
+    e.target.disabled = false;
+    e.target.textContent = 'Run follow-ups now';
+    loadLog();
   }
 });
 
-document.getElementById('reconnectBtn').addEventListener('click', async (e) => {
-  e.target.disabled = true; e.target.textContent = 'Reconnecting...';
-  await fetch('/api/whatsapp/reconnect', { method: 'POST' });
-  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Reconnect now'; loadStatus(); loadLog(); }, 3000);
+/* ---------------- activity log ---------------- */
+
+async function loadLog() {
+  const onlyErrors = document.getElementById('onlyErrors').checked;
+  const data = await getJson('/api/errors?limit=120' + (onlyErrors ? '&level=error' : ''));
+  if (!data) return;
+
+  const box = document.getElementById('log');
+  if (!data.entries || !data.entries.length) {
+    box.innerHTML = '<div class="empty"><b>Nothing recorded</b>' + (onlyErrors ? 'No problems have come up.' : 'Activity will appear here.') + '</div>';
+    return;
+  }
+  box.innerHTML = data.entries.map((e) => `
+    <div class="log-row ${esc(e.level)}">
+      <span class="at">${when(e.time)}</span>
+      <span class="lvl">${esc(e.level)}</span>
+      <span class="what"><span class="where">${esc(e.scope)}</span> ${esc(e.message)}
+        ${e.detail ? '<details><summary>Details</summary><pre>' + esc(e.detail) + '</pre></details>' : ''}
+      </span>
+    </div>`).join('');
+}
+
+document.getElementById('onlyErrors').addEventListener('change', loadLog);
+document.getElementById('clearLogBtn').addEventListener('click', async (e) => {
+  if (!confirm('Clear everything recorded here?')) return;
+  e.target.disabled = true;
+  try { await postJson('/api/errors/clear'); await loadLog(); }
+  finally { e.target.disabled = false; }
+});
+
+/* ---------------- WhatsApp connection actions ---------------- */
+
+document.getElementById('waTabQr').addEventListener('click', () => {
+  document.getElementById('waTabQr').setAttribute('aria-pressed', 'true');
+  document.getElementById('waTabPair').setAttribute('aria-pressed', 'false');
+  document.getElementById('waQrPane').style.display = 'block';
+  document.getElementById('waPairPane').style.display = 'none';
+  postJson('/api/whatsapp/use-qr').catch(() => {});
+});
+
+document.getElementById('waTabPair').addEventListener('click', () => {
+  document.getElementById('waTabPair').setAttribute('aria-pressed', 'true');
+  document.getElementById('waTabQr').setAttribute('aria-pressed', 'false');
+  document.getElementById('waPairPane').style.display = 'block';
+  document.getElementById('waQrPane').style.display = 'none';
 });
 
 document.getElementById('pairBtn').addEventListener('click', async (e) => {
@@ -525,232 +1255,94 @@ document.getElementById('pairBtn').addEventListener('click', async (e) => {
   if (!number) { errBox.textContent = 'Enter the number first.'; return; }
   if (!confirm('This clears the current WhatsApp session and starts a fresh link for ' + number + '. Continue?')) return;
 
-  e.target.disabled = true; e.target.textContent = 'Getting code...';
+  e.target.disabled = true;
+  e.target.textContent = 'Getting a code…';
   try {
-    const res = await fetch('/api/whatsapp/pairing-code', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ number }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    const data = await postJson('/api/whatsapp/pairing-code', { number });
     document.getElementById('pairCode').textContent = data.code;
     document.getElementById('pairResult').style.display = 'block';
   } catch (err) {
     errBox.textContent = err.message;
   } finally {
-    e.target.disabled = false; e.target.textContent = 'Get pairing code';
-    loadStatus(); loadLog();
-  }
-});
-
-document.getElementById('backToQrBtn').addEventListener('click', async () => {
-  await fetch('/api/whatsapp/use-qr', { method: 'POST' });
-  document.getElementById('pairResult').style.display = 'none';
-  document.querySelector('.link-tabs button[data-link="qr"]').click();
-  setTimeout(loadStatus, 2000);
-});
-
-/* ----------------------------- Error log ----------------------------- */
-
-async function loadLog() {
-  const onlyErrors = document.getElementById('errorsOnlyToggle').checked;
-  const res = await fetch('/api/errors?limit=120' + (onlyErrors ? '&level=error' : ''));
-  if (!res.ok) return;
-  const data = await res.json();
-  const counts = data.counts || {};
-  document.getElementById('errorCounts').innerHTML =
-    `<b>${counts.errors || 0}</b> error(s), <b>${counts.warnings || 0}</b> warning(s) since the last restart`;
-
-  const box = document.getElementById('logBox');
-  if (!data.entries.length) { box.innerHTML = '<div class="log-row info"><div class="body">Nothing logged yet.</div></div>'; return; }
-  box.innerHTML = data.entries.map((e) => `
-    <div class="log-row ${e.level}">
-      <span class="when">${when(e.time)}</span>
-      <span class="tag">${escapeHtml(e.level)}</span>
-      <div class="body">
-        <span class="scope">${escapeHtml(e.scope)}</span>${escapeHtml(e.message)}
-        ${e.detail ? `<details><summary>details</summary><pre>${escapeHtml(e.detail)}</pre></details>` : ''}
-      </div>
-    </div>
-  `).join('');
-}
-
-document.getElementById('refreshLogBtn').addEventListener('click', loadLog);
-document.getElementById('errorsOnlyToggle').addEventListener('change', loadLog);
-document.getElementById('clearLogBtn').addEventListener('click', async () => {
-  await fetch('/api/errors/clear', { method: 'POST' });
-  loadLog();
-});
-
-/* ----------------------------- Settings ----------------------------- */
-
-let currentSettings = {};
-
-async function loadSettings() {
-  const res = await fetch('/api/settings');
-  if (!res.ok) return;
-  currentSettings = await res.json();
-  document.getElementById('botEnabledToggle').checked = currentSettings.botEnabled !== false;
-  document.getElementById('followupEnabledToggle').checked = currentSettings.followupEnabled !== false;
-  document.getElementById('reviewReminderToggle').checked = currentSettings.reviewReminderEnabled !== false;
-  document.getElementById('adminNotificationNumber').value = currentSettings.adminNotificationNumber || '';
-}
-
-async function saveSettings(partial) {
-  const res = await fetch('/api/settings', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(partial),
-  });
-  if (res.ok) {
-    currentSettings = await res.json();
-    const note = document.getElementById('savedNote');
-    note.style.display = 'inline';
-    setTimeout(() => { note.style.display = 'none'; }, 1500);
-  }
-}
-
-document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-  saveSettings({
-    botEnabled: document.getElementById('botEnabledToggle').checked,
-    followupEnabled: document.getElementById('followupEnabledToggle').checked,
-    reviewReminderEnabled: document.getElementById('reviewReminderToggle').checked,
-    adminNotificationNumber: document.getElementById('adminNotificationNumber').value.trim(),
-  });
-});
-
-document.getElementById('runNowBtn').addEventListener('click', async (e) => {
-  e.target.disabled = true; e.target.textContent = 'Running...';
-  await fetch('/api/run-now', { method: 'POST' });
-  e.target.textContent = 'Done - check leads/WhatsApp';
-  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Send follow-ups / reviews now'; loadLeads(); loadLog(); }, 2000);
-});
-
-/* ----------------------------- Chats ----------------------------- */
-
-/**
- * The dashboard opens on Leads and stays there. Connection, bot controls,
- * the admin number and the error log all live behind the Settings tab, so the
- * day-to-day user only ever sees their enquiries.
- */
-function showTab(tab) {
-  document.querySelectorAll('.tabs button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.tab === tab);
-  });
-  document.getElementById('leadsView').style.display = tab === 'leads' ? '' : 'none';
-  document.getElementById('chatsView').style.display = tab === 'chats' ? '' : 'none';
-  document.getElementById('settingsView').style.display = tab === 'settings' ? '' : 'none';
-  if (tab === 'chats') loadChats();
-  if (tab === 'settings') { loadStatus(); loadLog(); }
-}
-
-document.querySelectorAll('.tabs button').forEach((btn) => {
-  btn.addEventListener('click', () => showTab(btn.dataset.tab));
-});
-
-document.getElementById('goToSettingsBtn').addEventListener('click', () => {
-  showTab('settings');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-});
-
-let allChats = [];
-let activeChatPhone = null;
-
-async function loadChats() {
-  const res = await fetch('/api/chats');
-  if (!res.ok) return;
-  allChats = await res.json();
-  renderChatList();
-}
-
-function renderChatList() {
-  const list = document.getElementById('chatList');
-  list.innerHTML = '';
-  for (const chat of allChats) {
-    const div = document.createElement('div');
-    div.className = 'chat-list-item' + (chat.phone === activeChatPhone ? ' active' : '');
-    div.innerHTML = `
-      <div class="name">${escapeHtml(chat.name || chat.phone)}</div>
-      <div class="preview">${escapeHtml(chat.lastMessage || 'No messages yet')}</div>
-    `;
-    div.addEventListener('click', () => openChat(chat.phone));
-    list.appendChild(div);
-  }
-}
-
-async function openChat(phone) {
-  activeChatPhone = phone;
-  renderChatList();
-  const chat = allChats.find(c => c.phone === phone);
-  document.getElementById('chatHeaderName').textContent = (chat && chat.name) || phone;
-  document.getElementById('takeoverLabel').style.display = 'flex';
-  document.getElementById('takeoverToggle').checked = chat && chat.humanTakeover === true;
-  updateTakeoverNote(chat && chat.humanTakeover === true);
-
-  const res = await fetch('/api/chats/' + encodeURIComponent(phone) + '/messages');
-  const messages = res.ok ? await res.json() : [];
-  const box = document.getElementById('chatMessages');
-  box.innerHTML = messages.map(m => `
-    <div class="msg ${m.role}">
-      <div class="role-label">${m.role === 'user' ? escapeHtml((chat && chat.name) || 'Customer') : (m.role === 'human' ? 'You' : 'AI')}</div>
-      ${escapeHtml(m.text)}
-    </div>
-  `).join('');
-  box.scrollTop = box.scrollHeight;
-}
-
-function updateTakeoverNote(isTakeover) {
-  document.getElementById('takeoverNote').style.display = isTakeover ? 'block' : 'none';
-}
-
-document.getElementById('takeoverToggle').addEventListener('change', async (e) => {
-  if (!activeChatPhone) return;
-  const humanTakeover = e.target.checked;
-  updateTakeoverNote(humanTakeover);
-  await fetch('/api/chats/' + encodeURIComponent(activeChatPhone) + '/takeover', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ humanTakeover }),
-  });
-  loadChats();
-});
-
-async function sendChatMessage() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text || !activeChatPhone) return;
-  input.value = '';
-  const res = await fetch('/api/chats/' + encodeURIComponent(activeChatPhone) + '/send', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    alert('Could not send: ' + (data.error || 'unknown error'));
+    e.target.disabled = false;
+    e.target.textContent = 'Get a pairing code';
+    loadStatus();
     loadLog();
   }
-  openChat(activeChatPhone);
-}
-
-document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
-document.getElementById('chatInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChatMessage();
 });
 
-setInterval(() => {
-  if (document.getElementById('chatsView').style.display !== 'none') {
-    loadChats();
-    if (activeChatPhone) openChat(activeChatPhone);
+document.getElementById('relinkBtn').addEventListener('click', async (e) => {
+  if (!confirm('This disconnects WhatsApp and asks for a new QR or pairing code. Continue?')) return;
+  e.target.disabled = true;
+  e.target.textContent = 'Unlinking…';
+  await postJson('/api/whatsapp/relink').catch(() => {});
+  setTimeout(() => {
+    e.target.disabled = false;
+    e.target.textContent = 'Unlink and start over';
+    loadStatus();
+  }, 3000);
+});
+
+document.getElementById('backupNowBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  e.target.textContent = 'Saving…';
+  try {
+    const data = await postJson('/api/whatsapp/backup-session');
+    alert(data.ok
+      ? 'The login is fully saved in the Google Sheet.'
+      : 'Some login changes could not be saved yet. Check Activity.');
+  } catch (err) {
+    alert('Could not save: ' + err.message);
+  } finally {
+    e.target.disabled = false;
+    e.target.textContent = 'Save login to Sheet now';
+    loadStatus();
+    loadLog();
   }
-}, 8000);
+});
 
-/* ----------------------------- Boot ----------------------------- */
+document.getElementById('reconnectBtn').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  e.target.textContent = 'Reconnecting…';
+  await postJson('/api/whatsapp/reconnect').catch(() => {});
+  setTimeout(() => {
+    e.target.disabled = false;
+    e.target.textContent = 'Reconnect now';
+    loadStatus();
+    loadLog();
+  }, 3000);
+});
 
-loadStatus();
-loadSettings();
-loadLeads();
-loadLog();
-setInterval(loadStatus, 4000);
-setInterval(loadLeads, 30000);
-setInterval(loadLog, 15000);
+/* ---------------- boot ---------------- */
+
+async function boot() {
+  const health = await getJson('/health');
+  if (health && health.business) {
+    document.getElementById('railBiz').textContent = health.business;
+  }
+  await Promise.all([loadStatus(), loadSettings(), loadLeads()]);
+  await loadInstagram();
+  const fromHash = window.location.hash.replace('#', '');
+  if (fromHash) showView(fromHash, true);
+}
+
+boot();
+
+window.addEventListener('hashchange', () => {
+  showView(window.location.hash.replace('#', ''), true);
+});
+
+// The connection state is the one thing that changes without anyone acting,
+// so only that is polled. Everything else reloads when you open its section.
+setInterval(() => {
+  loadStatus();
+  if (currentView === 'instagram') loadInstagram();
+}, 5000);
+
+setInterval(() => {
+  if (currentView === 'leads' || currentView === 'overview') loadLeads();
+  if (currentView === 'inbox') loadThreads();
+}, 20000);
 </script>
 </body>
 </html>

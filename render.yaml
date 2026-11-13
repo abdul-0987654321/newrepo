@@ -29,6 +29,18 @@ services:
         value: /var/data
       - key: AUTH_DIR
         value: /var/data/auth_info
+      # Instagram DM bot. Leave these unset and the app runs WhatsApp-only,
+      # with the Instagram section showing as "not set up".
+      - key: IG_APP_ID
+        sync: false
+      - key: IG_APP_SECRET
+        sync: false
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: IG_ACCOUNT_ID
+        sync: false
+      - key: IG_VERIFY_TOKEN
+        sync: false
     disk:
       name: data
       mountPath: /var/data

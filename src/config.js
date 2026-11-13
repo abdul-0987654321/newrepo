@@ -23,6 +23,19 @@ const config = {
     password: process.env.DASHBOARD_PASSWORD || 'dash123',
   },
 
+  // Instagram DM bot (Meta's official Instagram API). Optional - if these are
+  // unset the app runs exactly as before, with the Instagram section showing
+  // as "not configured" on the dashboard instead of failing to boot.
+  instagram: {
+    appId: process.env.IG_APP_ID || '',
+    appSecret: process.env.IG_APP_SECRET || '',
+    accessToken: process.env.IG_ACCESS_TOKEN || '',
+    accountId: process.env.IG_ACCOUNT_ID || '',
+    // We invent this one; it just has to match what you type into Meta's
+    // "Verify token" box when saving the callback URL.
+    verifyToken: process.env.IG_VERIFY_TOKEN || '',
+  },
+
   business: {
     name: process.env.BUSINESS_NAME || 'KSC Carpets',
     googleReviewLink: process.env.BUSINESS_GOOGLE_REVIEW_LINK || '',

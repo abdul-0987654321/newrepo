@@ -54,6 +54,11 @@ const DEFAULT_SETTINGS = {
   reviewReminderMaxAttempts: 2,
   reviewReminderMessage: "Hi {name}, just a quick reminder - we'd really appreciate a Google review when you get a moment: {reviewLink}",
   adminNotificationNumber: '', // WhatsApp number to ping when a new lead completes their enquiry
+
+  // Instagram DM bot. Empty igSystemPrompt means instagram.js falls back to
+  // its own built-in prompt, so the bot still works before anyone edits this.
+  igBotEnabled: true,
+  igSystemPrompt: '',
 };
 
 let settingsCache = null;

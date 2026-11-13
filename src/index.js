@@ -18,6 +18,7 @@ const { startFollowupScheduler, runFollowups, runReviewRequests, runReviewRemind
 const sheets = require('./sheets');
 const store = require('./store');
 const authStore = require('./authStore');
+const instagram = require('./instagram');
 
 // Records anything that escaped a try/catch and keeps the process alive - a
 // crash here would also drop the live WhatsApp connection.
@@ -62,7 +63,11 @@ async function main() {
 
   const app = express();
   app.set('trust proxy', 1); // Render terminates HTTPS in front of us
-  app.use(express.json());
+  // Keep the raw body around - Meta signs its webhook payloads and the
+  // signature only matches against the exact bytes they sent.
+  app.use(express.json({
+    verify: (req, res, buf) => { req.rawBody = buf; },
+  }));
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/', (req, res) => res.redirect('/dashboard'));
@@ -79,6 +84,15 @@ async function main() {
       time: new Date().toISOString(),
     });
   });
+
+  /* ------------------------- Instagram webhook -------------------------
+   * These two MUST stay public and unauthenticated - Meta's servers call
+   * them, and they have no dashboard cookie. The POST is protected instead
+   * by the app-secret signature check inside instagram.js.
+   */
+
+  app.get('/webhook/instagram', (req, res) => instagram.handleVerification(req, res));
+  app.post('/webhook/instagram', (req, res) => instagram.handleWebhook(req, res));
 
   app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
@@ -149,7 +163,13 @@ async function main() {
 
   app.post('/api/chats/:phone/send', requireDashboardAuth, async (req, res) => {
     try {
-      await sendManualMessage(req.params.phone, req.body.text);
+      // One inbox, two channels: an "ig:" key is an Instagram thread and has
+      // to go out through the Graph API, not Baileys.
+      if (String(req.params.phone).startsWith('ig:')) {
+        await instagram.sendManualMessage(req.params.phone, req.body.text);
+      } else {
+        await sendManualMessage(req.params.phone, req.body.text);
+      }
       res.json({ ok: true });
     } catch (err) {
       log.logError('dashboard', err, `Manual message to ${req.params.phone} failed`);
@@ -234,6 +254,26 @@ async function main() {
       res.json(await sheets.authInfo());
     } catch (err) {
       log.logError('dashboard', err, 'Reading session info from the Sheet failed');
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /* ------------------------- Instagram (dashboard side) ------------------------- */
+
+  app.get('/api/instagram/status', requireDashboardAuth, async (req, res) => {
+    const live = await instagram.checkConnection();
+    res.json({ ...instagram.getStatusPayload(), ...live });
+  });
+
+  // Sends a DM by hand from the dashboard. Only works inside the 24-hour
+  // window - the error from Meta is passed straight through so the reason
+  // is visible instead of a generic failure.
+  app.post('/api/instagram/send', requireDashboardAuth, async (req, res) => {
+    try {
+      await instagram.sendManualMessage(req.body.to, req.body.text);
+      res.json({ ok: true });
+    } catch (err) {
+      log.logError('instagram', err, 'Manual Instagram message failed');
       res.status(500).json({ error: err.message });
     }
   });
