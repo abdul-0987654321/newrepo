@@ -1012,13 +1012,35 @@ function renderLeads() {
           <td>${esc(l.contactNumber || (ch === 'whatsapp' ? l.phone : '')) || '<span class="note">—</span>'}</td>
           <td><span class="pill ${esc(l.status)}">${esc(String(l.status).replace('_', ' '))}</span></td>
           <td class="note">${when(l.createdAt)}</td>
-          <td><button class="btn quiet small" data-open="${esc(l.phone)}">Open</button></td>
+          <td style="white-space:nowrap">
+            <button class="btn quiet small" data-open="${esc(l.phone)}">Open</button>
+            <button class="btn quiet small" data-delete="${esc(l.phone)}" title="Delete this lead and its chat">Delete</button>
+          </td>
         </tr>`;
       }).join('')}</tbody>
     </table>`;
 
   document.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => { showView('inbox'); openThread(el.dataset.open); });
+  });
+
+  document.querySelectorAll('[data-delete]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const key = el.dataset.delete;
+      const who = (leads.find((l) => l.phone === key) || {});
+      if (!confirm('Delete ' + displayName(who.phone ? who : { phone: key }) + ' and the whole conversation? This cannot be undone.')) return;
+      el.disabled = true;
+      try {
+        const res = await fetch('/api/leads/' + encodeURIComponent(key), { method: 'DELETE' });
+        if (!res.ok) throw new Error('Could not delete that lead');
+        if (activeKey === key) activeKey = null;
+        await loadLeads();
+        await loadThreads();
+      } catch (err) {
+        alert(err.message);
+        el.disabled = false;
+      }
+    });
   });
 }
 
