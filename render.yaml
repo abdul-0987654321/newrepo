@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: ksc-carpets-bot
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SHEETS_WEBAPP_URL
+        sync: false
+      - key: SHEETS_WEBAPP_SECRET
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: BUSINESS_NAME
+        value: KSC Carpets
+      - key: BUSINESS_GOOGLE_REVIEW_LINK
+        sync: false
+      - key: BUSINESS_WEBSITE
+        value: https://www.ksc-carpets.com
+      - key: DATA_DIR
+        value: /var/data
+      - key: AUTH_DIR
+        value: /var/data/auth_info
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1

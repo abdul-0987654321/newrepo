@@ -1,0 +1,7 @@
+node_modules/
+.env
+# Local runtime data - the real copy lives in the Google Sheet. Never commit
+# customer chats or the WhatsApp login.
+data/
+auth_info/
+*.log

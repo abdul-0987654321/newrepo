@@ -1,0 +1,25 @@
+{
+  "name": "ksc-carpets-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp AI lead-qualification bot for KSC Carpets - Baileys + OpenAI + local data store + Google Sheet backup",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@itsliaaa/baileys": "^0.3.18",
+    "link-preview-js": "^3.0.5",
+    "qrcode": "^1.5.3",
+    "pino": "^9.3.2",
+    "express": "^4.19.2",
+    "openai": "^4.56.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^2.7.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  }
+}
