@@ -88,6 +88,31 @@ function rememberMessageId(id) {
 /* ------------------------- Webhook verification ------------------------- */
 
 /**
+ * Meta verifies a callback URL ONCE, when you save it - not on every boot.
+ * So this has to outlive the process, or the dashboard would claim the
+ * webhook was never set up after each redeploy. It goes in settings, which
+ * are mirrored to the Google Sheet and restored on a fresh disk.
+ */
+function markWebhookSeen() {
+  const now = new Date().toISOString();
+  stats.webhookVerifiedAt = now;
+  try {
+    store.updateSettings({ igWebhookVerifiedAt: now });
+  } catch (err) {
+    log.logWarn('instagram', `Could not record the webhook verification: ${err.message}`);
+  }
+}
+
+function webhookVerifiedAt() {
+  if (stats.webhookVerifiedAt) return stats.webhookVerifiedAt;
+  try {
+    return store.getSettings().igWebhookVerifiedAt || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * GET /webhook/instagram
  * Meta calls this once when you save the callback URL. It must echo back
  * hub.challenge as PLAIN TEXT, or the URL is rejected.
@@ -98,7 +123,7 @@ function handleVerification(req, res) {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === config.instagram.verifyToken) {
-    stats.webhookVerifiedAt = new Date().toISOString();
+    markWebhookSeen();
     log.logInfo('instagram', 'Webhook verified by Meta.');
     return res.status(200).type('text/plain').send(challenge);
   }
@@ -146,6 +171,11 @@ function handleWebhook(req, res) {
 
   const body = req.body || {};
   if (body.object !== 'instagram') return;
+
+  // An event arriving proves the webhook works, which covers the case where
+  // the URL was verified before this build started recording it. Only write
+  // when it is not already known, so this does not hit the Sheet per message.
+  if (!webhookVerifiedAt()) markWebhookSeen();
 
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
@@ -357,8 +387,8 @@ function getStatusPayload() {
     accountId: config.instagram.accountId || null,
     tokenKind: tokenKind(),
     graphHost: graphBase().replace('https://', '').split('/')[0],
-    webhookVerifiedAt: stats.webhookVerifiedAt,
     ...stats,
+    webhookVerifiedAt: webhookVerifiedAt(),
   };
 }
 

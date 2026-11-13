@@ -59,6 +59,9 @@ const DEFAULT_SETTINGS = {
   // its own built-in prompt, so the bot still works before anyone edits this.
   igBotEnabled: true,
   igSystemPrompt: '',
+  // Set the first time Meta verifies the callback URL, or an event arrives.
+  // Meta only verifies once, so this must survive redeploys.
+  igWebhookVerifiedAt: '',
 };
 
 let settingsCache = null;
