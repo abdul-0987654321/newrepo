@@ -922,7 +922,13 @@ async function loadInstagram() {
 
   const items = [
     { done: Boolean(ig.accountId), label: 'Instagram professional account linked', detail: ig.accountId ? 'Account ' + ig.accountId : 'Set IG_ACCOUNT_ID' },
-    { done: ig.connected === true, label: 'Access token works', detail: ig.connected ? 'Verified with Meta just now' : (ig.reason || 'Set IG_ACCESS_TOKEN') },
+    {
+      done: ig.connected === true,
+      label: 'Access token works',
+      detail: ig.connected
+        ? 'Verified with Meta just now · ' + (ig.tokenKind === 'instagram-login' ? 'Instagram login' : 'Unified login') + ' · ' + (ig.graphHost || '')
+        : (ig.reason || 'Set IG_ACCESS_TOKEN'),
+    },
     { done: Boolean(ig.webhookVerifiedAt), label: 'Webhook verified by Meta', detail: ig.webhookVerifiedAt ? 'Verified ' + when(ig.webhookVerifiedAt) : 'Meta has not called the callback URL yet' },
     { done: (ig.received || 0) > 0, label: 'A DM has come through', detail: (ig.received || 0) > 0 ? ig.received + ' received, ' + (ig.replied || 0) + ' answered' : 'Send a test DM from another account' },
   ];

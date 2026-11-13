@@ -23,7 +23,29 @@ const log = require('./errors');
 const store = require('./store');
 
 const GRAPH_VERSION = 'v23.0';
-const GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+/**
+ * The host has to match the KIND of token, or Meta answers "Cannot parse
+ * access token" even though the token is perfectly valid:
+ *   - "IGAA..." comes from API setup with Instagram login -> graph.instagram.com
+ *   - "EAA..."/"EAG..." comes from Unified login or Facebook login
+ *     -> graph.facebook.com
+ * Newer Meta apps only offer Unified login, so EAA is the common case.
+ */
+function graphBase() {
+  const token = String(config.instagram.accessToken || '');
+  const host = token.startsWith('IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
+  return `https://${host}/${GRAPH_VERSION}`;
+}
+
+/** Which login the token came from, for the dashboard's setup checklist. */
+function tokenKind() {
+  const token = String(config.instagram.accessToken || '');
+  if (!token) return 'missing';
+  if (token.startsWith('IGAA')) return 'instagram-login';
+  if (token.startsWith('EAA') || token.startsWith('EAG')) return 'unified-login';
+  return 'unrecognised';
+}
 
 // Meta's hard limit: no normal DM outside 24h of the user's last message.
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -266,7 +288,7 @@ async function sendMessage(recipientId, text) {
     throw new Error('Instagram is not configured - set IG_ACCESS_TOKEN and IG_ACCOUNT_ID.');
   }
 
-  const url = `${GRAPH_BASE}/${config.instagram.accountId}/messages`;
+  const url = `${graphBase()}/${config.instagram.accountId}/messages`;
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -308,16 +330,22 @@ async function checkConnection() {
     return { connected: false, reason: 'Not configured - IG_ACCESS_TOKEN or IG_ACCOUNT_ID is missing.' };
   }
   try {
-    const url = `${GRAPH_BASE}/me?fields=id,username&access_token=${encodeURIComponent(config.instagram.accessToken)}`;
-    const response = await fetch(url);
+    // graph.facebook.com/me on a Unified-login token resolves to the user,
+    // not the Instagram account, so ask for the account by its id instead.
+    const path = tokenKind() === 'instagram-login' ? 'me' : String(config.instagram.accountId);
+    const url = `${graphBase()}/${path}?fields=id,username`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${config.instagram.accessToken}` },
+    });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return {
-        connected: false,
-        reason: (payload.error && payload.error.message) || `HTTP ${response.status}`,
-      };
+      let reason = (payload.error && payload.error.message) || `HTTP ${response.status}`;
+      if (tokenKind() === 'unrecognised') {
+        reason += ' - the token does not start with IGAA, EAA or EAG, so it looks truncated or is not an access token.';
+      }
+      return { connected: false, reason, tokenKind: tokenKind() };
     }
-    return { connected: true, username: payload.username, id: payload.id };
+    return { connected: true, username: payload.username, id: payload.id, tokenKind: tokenKind() };
   } catch (err) {
     return { connected: false, reason: err.message };
   }
@@ -327,6 +355,8 @@ function getStatusPayload() {
   return {
     configured: isConfigured(),
     accountId: config.instagram.accountId || null,
+    tokenKind: tokenKind(),
+    graphHost: graphBase().replace('https://', '').split('/')[0],
     webhookVerifiedAt: stats.webhookVerifiedAt,
     ...stats,
   };
