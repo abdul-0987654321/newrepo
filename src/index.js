@@ -261,8 +261,11 @@ async function main() {
   /* ------------------------- Instagram (dashboard side) ------------------------- */
 
   app.get('/api/instagram/status', requireDashboardAuth, async (req, res) => {
-    const live = await instagram.checkConnection();
-    res.json({ ...instagram.getStatusPayload(), ...live });
+    const [live, subscription] = await Promise.all([
+      instagram.checkConnection(),
+      instagram.checkSubscription(),
+    ]);
+    res.json({ ...instagram.getStatusPayload(), ...live, subscription });
   });
 
   // Sends a DM by hand from the dashboard. Only works inside the 24-hour

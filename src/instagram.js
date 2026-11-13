@@ -427,6 +427,44 @@ async function sendMessage(recipientId, text) {
   return payload;
 }
 
+/**
+ * Asks Meta which webhook fields IT thinks this app is subscribed to for
+ * this account. The toggles in Meta's console are easy to misread and a
+ * subscription can go stale, so this is the only way to know for certain
+ * whether a real DM would ever be forwarded. An empty list is the answer
+ * to "Meta reaches my server for Test payloads but never for real DMs".
+ */
+async function checkSubscription() {
+  if (!isConfigured()) {
+    return { ok: false, reason: 'Instagram is not configured yet.' };
+  }
+  try {
+    const url = `${graphBase()}/${config.instagram.accountId}/subscribed_apps`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${config.instagram.accessToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        reason: (payload.error && payload.error.message) || `HTTP ${response.status}`,
+      };
+    }
+
+    const apps = payload.data || [];
+    const fields = apps.flatMap((a) => a.subscribed_fields || []);
+    return {
+      ok: true,
+      apps: apps.length,
+      fields,
+      hasMessages: fields.includes('messages'),
+    };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
+}
+
 /** Used by the dashboard's manual-reply box. */
 async function sendManualMessage(leadKey, text) {
   const senderId = String(leadKey).replace(/^ig:/, '');
@@ -481,6 +519,7 @@ module.exports = {
   sendMessage,
   sendManualMessage,
   checkConnection,
+  checkSubscription,
   getStatusPayload,
   isConfigured,
   DEFAULT_PROMPT,
