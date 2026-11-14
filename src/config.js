@@ -32,12 +32,21 @@ const config = {
     //                 only forwards real DMs once Meta approves the app.
     //   "instantdm" - InstantDM's approved app acts as the pipe, so no App
     //                 Review is needed. Their API is a paid tier.
+    //   "zernio"    - same idea as InstantDM, but the first two connected
+    //                 accounts are free, including API and webhooks.
     // The AI, the conversation history and the dashboard are ours either way.
     provider: (process.env.IG_PROVIDER || 'meta').toLowerCase(),
 
     // InstantDM only: the API key, and the webhook secret shown beside it.
     instantdmApiKey: process.env.INSTANTDM_API_KEY || '',
     instantdmWebhookSecret: process.env.INSTANTDM_WEBHOOK_SECRET || '',
+
+    // Zernio only. The webhook secret is one WE choose and hand to them when
+    // registering the endpoint - they do not generate it, and they only sign
+    // deliveries for endpoints that have one.
+    zernioApiKey: process.env.ZERNIO_API_KEY || '',
+    zernioWebhookSecret: process.env.ZERNIO_WEBHOOK_SECRET || '',
+    zernioAccountId: process.env.ZERNIO_ACCOUNT_ID || '',
 
     appId: process.env.IG_APP_ID || '',
     appSecret: process.env.IG_APP_SECRET || '',

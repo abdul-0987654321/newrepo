@@ -89,8 +89,21 @@ function usingInstantDm() {
   return config.instagram.provider === 'instantdm';
 }
 
+/** True when Zernio is carrying the messages. */
+function usingZernio() {
+  return config.instagram.provider === 'zernio';
+}
+
+/** A provider other than our own Meta app is in front of Instagram. */
+function usingRelay() {
+  return usingInstantDm() || usingZernio();
+}
+
 function isConfigured() {
   if (usingInstantDm()) return Boolean(config.instagram.instantdmApiKey);
+  if (usingZernio()) {
+    return Boolean(config.instagram.zernioApiKey && config.instagram.zernioAccountId);
+  }
   return Boolean(config.instagram.accessToken && config.instagram.accountId);
 }
 
@@ -99,9 +112,21 @@ function missingSetting() {
   if (usingInstantDm()) {
     return config.instagram.instantdmApiKey ? null : 'INSTANTDM_API_KEY';
   }
+  if (usingZernio()) {
+    if (!config.instagram.zernioApiKey) return 'ZERNIO_API_KEY';
+    if (!config.instagram.zernioAccountId) return 'ZERNIO_ACCOUNT_ID';
+    return null;
+  }
   if (!config.instagram.accessToken) return 'IG_ACCESS_TOKEN';
   if (!config.instagram.accountId) return 'IG_ACCOUNT_ID';
   return null;
+}
+
+/** The provider's name, for log lines and the dashboard. */
+function providerName() {
+  if (usingInstantDm()) return 'InstantDM';
+  if (usingZernio()) return 'Zernio';
+  return 'Meta';
 }
 
 function rememberMessageId(id) {
@@ -179,7 +204,30 @@ function sameDigest(a, b) {
  * change spacing, and then a perfectly valid signature fails.
  */
 function verifySignature(req) {
-  return usingInstantDm() ? verifyInstantDmSignature(req) : verifyMetaSignature(req);
+  if (usingInstantDm()) return verifyInstantDmSignature(req);
+  if (usingZernio()) return verifyZernioSignature(req);
+  return verifyMetaSignature(req);
+}
+
+/**
+ * Zernio signs the raw body with HMAC-SHA256, lowercase hex, in
+ * X-Zernio-Signature (X-Late-Signature is their legacy alias for the same
+ * value). The secret is one we chose and gave them when registering the
+ * endpoint - they only sign deliveries for endpoints that have one, so an
+ * unsigned delivery means the secret was never registered.
+ */
+function verifyZernioSignature(req) {
+  const secret = config.instagram.zernioWebhookSecret;
+  if (!secret) {
+    log.logWarn('instagram', 'ZERNIO_WEBHOOK_SECRET is not set - webhook payloads are NOT signature-checked.');
+    return true;
+  }
+
+  const header = req.get('x-zernio-signature') || req.get('x-late-signature') || '';
+  if (!header || !req.rawBody) return false;
+
+  const expected = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  return sameDigest(header.toLowerCase(), expected);
 }
 
 function verifyMetaSignature(req) {
@@ -255,16 +303,20 @@ function handleWebhook(req, res) {
   res.sendStatus(200);
 
   const body = req.body || {};
-  if (body.object !== 'instagram') {
+
+  // Meta and InstantDM both send Meta's envelope, which names its product.
+  // Zernio sends its own, named by the event instead.
+  if (!usingZernio() && body.object !== 'instagram') {
     log.logInfo('instagram', `Webhook POST received, but for "${body.object || 'nothing'}" rather than instagram - ignored.`);
     return;
   }
 
   const events = extractEvents(body);
   // Name the provider the message actually came through: reading "from Meta"
-  // while running on InstantDM makes the log useless for working out which
-  // half of the chain is at fault.
-  log.logInfo('instagram', `Webhook POST received from ${usingInstantDm() ? 'InstantDM' : 'Meta'} with ${events.length} event(s).`);
+  // while running on another provider makes the log useless for working out
+  // which half of the chain is at fault.
+  const via = usingZernio() && body.event ? `${providerName()} (${body.event})` : providerName();
+  log.logInfo('instagram', `Webhook POST received from ${via} with ${events.length} event(s).`);
 
   // With nothing to act on, record the shape rather than the content: it is
   // the only way to tell a harmless test ping from a payload we failed to
@@ -295,7 +347,79 @@ function handleWebhook(req, res) {
  * costs nothing and avoids a silent do-nothing bot if Meta routes a given
  * app the other way.
  */
+/**
+ * Finds the first usable string under any of these key names, anywhere in
+ * the payload. Zernio does not publish the message.received schema, so
+ * rather than guess one shape and answer nothing when it differs, we look
+ * for the handful of names it could reasonably use. The first real delivery
+ * then tells us the truth, logged as a shape with no message content.
+ */
+function findValue(node, keys, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 6) return null;
+
+  for (const key of keys) {
+    const value = node[key];
+    if (typeof value === 'string' && value.trim()) return value;
+    // "sender": { "id": ... } and "message": { "text": ... } both occur.
+    if (value && typeof value === 'object') {
+      const nested = value.id || value.text || value.body;
+      if (typeof nested === 'string' && nested.trim()) return nested;
+    }
+  }
+
+  for (const value of Object.values(node)) {
+    if (value && typeof value === 'object') {
+      const found = findValue(value, keys, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const ZERNIO_FIELDS = {
+  conversation: ['conversationId', 'conversation_id', 'conversation', 'threadId'],
+  sender: ['senderId', 'sender', 'contactId', 'contact', 'from', 'participantId'],
+  text: ['text', 'body', 'message', 'content'],
+  messageId: ['messageId', 'message_id', 'externalMessageId', 'mid'],
+};
+
+/**
+ * Turns one Zernio webhook into the same event shape the Meta path uses, so
+ * everything downstream is shared. Replies go to a conversation rather than
+ * a user, so the conversation id is carried along and stored on the lead.
+ */
+function extractZernioEvents(body) {
+  if (typeof body.event !== 'string') return [];
+  // Only inbound messages. Reactions, echoes, posts and the test ping all
+  // arrive here too, and answering any of them would be wrong.
+  if (body.event !== 'message.received') return [];
+
+  // Their own sends come back flagged rather than as a separate event.
+  const meta = body.metadata || (body.data && body.data.metadata) || {};
+  if (meta.isEcho === true || meta.echo === true) return [];
+
+  const conversationId = findValue(body, ZERNIO_FIELDS.conversation);
+  const text = findValue(body, ZERNIO_FIELDS.text);
+  if (!conversationId || !text) return [];
+
+  const senderId = findValue(body, ZERNIO_FIELDS.sender);
+
+  return [{
+    // Without a sender we still have a conversation, which is enough both to
+    // reply and to keep the history together.
+    sender: { id: senderId || conversationId },
+    conversationId,
+    timestamp: body.timestamp ? new Date(body.timestamp).getTime() : Date.now(),
+    message: {
+      mid: findValue(body, ZERNIO_FIELDS.messageId) || `${body.id || 'zernio'}:${conversationId}`,
+      text,
+    },
+  }];
+}
+
 function extractEvents(body) {
+  if (usingZernio()) return extractZernioEvents(body);
+
   const events = [];
 
   for (const entry of body.entry || []) {
@@ -331,6 +455,26 @@ function extractEvents(body) {
 
 /** Keys only - never values, so no message text reaches the log. */
 function describeShape(body) {
+  // Zernio's schema is not published, so when nothing could be extracted the
+  // key layout is exactly what is needed to fix it - and it must carry no
+  // message text with it.
+  if (usingZernio()) {
+    const outline = (node, depth = 0) => {
+      if (!node || typeof node !== 'object' || depth > 2) return '';
+      return Object.entries(node)
+        .map(([k, v]) => {
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            const inner = outline(v, depth + 1);
+            return inner ? `${k}{${inner}}` : k;
+          }
+          if (Array.isArray(v)) return `${k}[${v.length}]`;
+          return k;
+        })
+        .join(',');
+    };
+    return `event=${body.event || 'none'} ${outline(body)}`;
+  }
+
   const entries = body.entry || [];
   if (!entries.length) return 'entry: []';
   return entries
@@ -368,7 +512,12 @@ async function processEvent(event) {
     return;
   }
 
-  store.upsertLead(leadKey, { source: 'instagram', lastContacted: new Date().toISOString() });
+  const patch = { source: 'instagram', lastContacted: new Date().toISOString() };
+  // Zernio replies to a conversation, not to a person, so the id has to be
+  // kept - without it a reply typed later from the dashboard has nowhere to
+  // go, even though the conversation is sitting right there.
+  if (event.conversationId) patch.conversationId = event.conversationId;
+  store.upsertLead(leadKey, patch);
   store.logMessage(leadKey, 'user', text);
 
   const settings = store.getSettings();
@@ -398,7 +547,7 @@ async function processEvent(event) {
   const reply = await generateReply(leadKey, text);
   if (!reply) return;
 
-  await sendMessage(senderId, reply);
+  await sendMessage(senderId, reply, { conversationId: event.conversationId });
   store.logMessage(leadKey, 'assistant', reply);
   stats.replied += 1;
 }
@@ -478,15 +627,58 @@ const INSTANTDM_ACTION_URL = 'https://openapi.instantdm.com/action';
  * used, because the limit is Meta's: the Graph API answers with error code
  * 10 / subcode 2534022 once it has closed, and InstantDM passes that on.
  */
-async function sendMessage(recipientId, text) {
+async function sendMessage(recipientId, text, options = {}) {
   const missing = missingSetting();
   if (missing) {
     throw new Error(`Instagram is not configured - set ${missing}.`);
   }
   const body = String(text).slice(0, 1000);
+
+  if (usingZernio()) {
+    const conversationId = options.conversationId
+      || (store.getLead(`ig:${recipientId}`) || {}).conversationId;
+    if (!conversationId) {
+      throw new Error('No Zernio conversation id for this person - a reply can only be sent inside a conversation they started.');
+    }
+    return sendViaZernio(conversationId, body);
+  }
+
   return usingInstantDm()
     ? sendViaInstantDm(recipientId, body)
     : sendViaMeta(recipientId, body);
+}
+
+const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
+
+/**
+ * Zernio addresses the conversation, not the person, and the account id goes
+ * in the body because one API key can hold several connected accounts.
+ */
+async function sendViaZernio(conversationId, text) {
+  const url = `${ZERNIO_API_BASE}/inbox/conversations/${encodeURIComponent(conversationId)}/messages`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.instagram.zernioApiKey}`,
+    },
+    body: JSON.stringify({
+      accountId: config.instagram.zernioAccountId,
+      message: text,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const reason = payload.error || payload.message || `HTTP ${response.status}`;
+    stats.failed += 1;
+    stats.lastError = String(reason);
+    throw new Error(
+      `Zernio send failed (${response.status}): ${reason}` +
+        (payload.code ? ` [${payload.code}]` : '')
+    );
+  }
+  return payload;
 }
 
 async function sendViaMeta(recipientId, text) {
@@ -559,7 +751,7 @@ async function sendViaInstantDm(recipientId, text) {
 async function checkSubscription() {
   // Only meaningful for our own Meta app. With InstantDM the subscription is
   // theirs, and what matters instead is whether their webhook points here.
-  if (usingInstantDm()) {
+  if (usingRelay()) {
     return { ok: true, notApplicable: true, hasMessages: true, fields: [] };
   }
   if (!isConfigured()) {
@@ -595,7 +787,8 @@ async function checkSubscription() {
 /** Used by the dashboard's manual-reply box. */
 async function sendManualMessage(leadKey, text) {
   const senderId = String(leadKey).replace(/^ig:/, '');
-  await sendMessage(senderId, text);
+  const lead = store.getLead(`ig:${senderId}`) || {};
+  await sendMessage(senderId, text, { conversationId: lead.conversationId });
   store.logMessage(`ig:${senderId}`, 'human', text);
   return { ok: true };
 }
@@ -607,6 +800,30 @@ async function checkConnection() {
   const missing = missingSetting();
   if (missing) {
     return { connected: false, reason: `Not configured - ${missing} is missing.` };
+  }
+
+  // Zernio charges for sends, not reads, so listing one conversation is a
+  // free way to prove the key actually works rather than merely existing.
+  if (usingZernio()) {
+    try {
+      const url = `${ZERNIO_API_BASE}/inbox/conversations?accountId=${encodeURIComponent(config.instagram.zernioAccountId)}&limit=1`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${config.instagram.zernioApiKey}` },
+      });
+      if (response.status === 401 || response.status === 403) {
+        const payload = await response.json().catch(() => ({}));
+        return {
+          connected: false,
+          provider: 'zernio',
+          reason: payload.error || payload.message || 'Zernio rejected the API key.',
+        };
+      }
+      // Any other status means the key authenticated, even if the query
+      // itself was not to their liking.
+      return { connected: true, provider: 'zernio' };
+    } catch (err) {
+      return { connected: false, provider: 'zernio', reason: err.message };
+    }
   }
 
   // InstantDM's API has no free "who am I" call, and every send costs a
@@ -646,16 +863,21 @@ async function checkConnection() {
 function getStatusPayload() {
   return {
     configured: isConfigured(),
-    provider: usingInstantDm() ? 'instantdm' : 'meta',
+    provider: config.instagram.provider,
+    providerName: providerName(),
     missingSetting: missingSetting(),
-    accountId: config.instagram.accountId || null,
+    accountId: usingZernio()
+      ? config.instagram.zernioAccountId || null
+      : config.instagram.accountId || null,
     tokenKind: tokenKind(),
     graphHost: usingInstantDm()
       ? 'openapi.instantdm.com'
-      : graphBase().replace('https://', '').split('/')[0],
+      : (usingZernio() ? 'zernio.com' : graphBase().replace('https://', '').split('/')[0]),
     signatureChecked: usingInstantDm()
       ? Boolean(config.instagram.instantdmWebhookSecret)
-      : Boolean(config.instagram.appSecret),
+      : (usingZernio()
+        ? Boolean(config.instagram.zernioWebhookSecret)
+        : Boolean(config.instagram.appSecret)),
     ...stats,
     webhookVerifiedAt: webhookVerifiedAt(),
   };

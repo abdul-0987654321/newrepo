@@ -35,11 +35,19 @@ services:
       # IG_PROVIDER picks who carries the messages:
       #   meta      - our own Meta app (needs App Review before real DMs arrive)
       #   instantdm - InstantDM's approved app (paid tier, no review needed)
+      #   zernio    - Zernio's approved app (first 2 accounts free)
       - key: IG_PROVIDER
         value: meta
       - key: INSTANTDM_API_KEY
         sync: false
       - key: INSTANTDM_WEBHOOK_SECRET
+        sync: false
+      - key: ZERNIO_API_KEY
+        sync: false
+      # We invent this one and give it to Zernio when registering the webhook.
+      - key: ZERNIO_WEBHOOK_SECRET
+        sync: false
+      - key: ZERNIO_ACCOUNT_ID
         sync: false
       - key: IG_APP_ID
         sync: false

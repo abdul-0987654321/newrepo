@@ -930,7 +930,9 @@ async function loadInstagram() {
   document.getElementById('igBeacon').className = 'beacon ' + state;
 
   const viaInstantDm = ig.provider === 'instantdm';
-  const carrier = viaInstantDm ? 'InstantDM' : 'Meta';
+  const viaZernio = ig.provider === 'zernio';
+  const viaRelay = viaInstantDm || viaZernio;
+  const carrier = ig.providerName || 'Meta';
 
   const title = document.getElementById('igStatus');
   const help = document.getElementById('igHelp');
@@ -941,8 +943,8 @@ async function loadInstagram() {
       : 'Add the connection details to the environment variables.';
   } else if (ig.connected) {
     title.textContent = 'Connected';
-    help.textContent = viaInstantDm
-      ? 'Replies go out through InstantDM. The answers are written by your own AI.'
+    help.textContent = viaRelay
+      ? 'Replies go out through ' + carrier + '. The answers are written by your own AI.'
       : 'Answering DMs as @' + (ig.username || 'your account') + '.';
   } else {
     title.textContent = 'Not connected';
@@ -956,19 +958,29 @@ async function loadInstagram() {
   // The route to Instagram differs by provider, so the steps do too. The
   // last two are the same either way: is anything arriving, and did a real
   // DM get answered.
-  const items = viaInstantDm
+  const secretVar = viaZernio ? 'ZERNIO_WEBHOOK_SECRET' : 'INSTANTDM_WEBHOOK_SECRET';
+  const items = viaRelay
     ? [
       {
         done: ig.configured,
-        label: 'InstantDM API key set',
-        detail: ig.configured ? 'Sending through ' + ig.graphHost : 'Set INSTANTDM_API_KEY',
+        label: carrier + ' API key set',
+        detail: ig.configured
+          ? 'Sending through ' + ig.graphHost + (ig.accountId ? ' · account ' + ig.accountId : '')
+          : 'Set ' + (ig.missingSetting || 'the API key'),
+      },
+      {
+        done: ig.connected === true,
+        label: 'The key works',
+        detail: ig.connected
+          ? (ig.unverified ? 'Key is set. Confirmed by the first reply it sends.' : 'Checked with ' + carrier + ' just now')
+          : (ig.reason || 'Not checked yet'),
       },
       {
         done: ig.signatureChecked,
         label: 'Webhook signature checked',
         detail: ig.signatureChecked
-          ? 'Payloads are verified against INSTANTDM_WEBHOOK_SECRET'
-          : 'INSTANTDM_WEBHOOK_SECRET is not set, so anyone who learns this URL could post fake messages.',
+          ? 'Payloads are verified against ' + secretVar
+          : secretVar + ' is not set, so anyone who learns this URL could post fake messages.',
       },
     ]
     : [
@@ -1023,21 +1035,27 @@ async function loadInstagram() {
 
   document.getElementById('igWebhookUrl').textContent = window.location.origin + '/webhook/instagram';
 
-  document.getElementById('igSetupLede').textContent = viaInstantDm
-    ? 'Messages travel through InstantDM, so no Meta App Review is needed. Each item below has to be done once.'
+  document.getElementById('igSetupLede').textContent = viaRelay
+    ? 'Messages travel through ' + carrier + ', so no Meta App Review is needed. Each item below has to be done once.'
     : "Instagram replies run on Meta's official API. Each item below has to be done once.";
 
-  document.getElementById('igWebhookWhere').textContent = viaInstantDm
-    ? 'In InstantDM, open API & MCP, then Webhooks, turn the webhook on and paste this as the URL:'
-    : 'In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:';
+  document.getElementById('igWebhookWhere').textContent = viaZernio
+    ? 'In Zernio, register this as your webhook URL (Settings, then Webhooks):'
+    : (viaInstantDm
+      ? 'In InstantDM, open API & MCP, then Webhooks, turn the webhook on and paste this as the URL:'
+      : 'In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:');
 
-  document.getElementById('igWebhookThen').innerHTML = viaInstantDm
-    ? 'Subscribe to the <b>dm_received</b> event, and copy the signing secret into <b>INSTANTDM_WEBHOOK_SECRET</b>.'
-    : 'Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.';
+  document.getElementById('igWebhookThen').innerHTML = viaZernio
+    ? 'Subscribe to <b>message.received</b>, and set the signing secret to the same value as <b>ZERNIO_WEBHOOK_SECRET</b> — you choose it, Zernio does not generate one.'
+    : (viaInstantDm
+      ? 'Subscribe to the <b>dm_received</b> event, and copy the signing secret into <b>INSTANTDM_WEBHOOK_SECRET</b>.'
+      : 'Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.');
 
-  document.getElementById('igProviderLimit').textContent = viaInstantDm
-    ? 'Every reply sent costs one InstantDM credit.'
-    : 'Until Meta approves the app, only accounts added as testers can use it.';
+  document.getElementById('igProviderLimit').textContent = viaZernio
+    ? 'Sending is free up to 10,000 messages a month, then $1 per 10,000.'
+    : (viaInstantDm
+      ? 'Every reply sent costs one InstantDM credit.'
+      : 'Until Meta approves the app, only accounts added as testers can use it.');
 
   if (ig.lastError) {
     const h = document.getElementById('igHelp');

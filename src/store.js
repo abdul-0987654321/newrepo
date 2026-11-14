@@ -126,6 +126,8 @@ function newLead(phone) {
     // dashboard keeps its own - that is what tells you what you have
     // actually looked at.
     dashboardSeenAt: '',
+    // Zernio addresses a reply by conversation rather than by person.
+    conversationId: '',
   };
 }
 
