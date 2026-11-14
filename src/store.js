@@ -59,6 +59,8 @@ const DEFAULT_SETTINGS = {
   // its own built-in prompt, so the bot still works before anyone edits this.
   igBotEnabled: true,
   igSystemPrompt: '',
+  // Used to build the "Message on Instagram" link shown to a visitor.
+  igUsername: '',
   // Set the first time Meta verifies the callback URL, or an event arrives.
   // Meta only verifies once, so this must survive redeploys.
   igWebhookVerifiedAt: '',
