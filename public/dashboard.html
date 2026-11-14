@@ -204,6 +204,19 @@
   .pill.completed { color: var(--ink-soft); border-color: var(--rule); background: #f2f4f3; }
   .pill.ch-whatsapp { color: var(--live); border-color: #b4d9cb; background: #e8f4ef; }
   .pill.ch-instagram { color: #8b2a74; border-color: #e3c2dc; background: #fbeef8; }
+  .pill.att-takeover { color: var(--watch); border-color: #e6cfa6; background: #fdf4e6; }
+  .pill.att-callback { color: var(--watch); border-color: #e6cfa6; background: #fdf4e6; }
+  .pill.att-unanswered { color: var(--stop); border-color: #e7bfbc; background: #fbeeed; }
+  .pill.att-handled { color: var(--ink-soft); border-color: var(--rule); background: #f2f4f3; }
+
+  /* A thread nobody has opened here since the last message came in. */
+  .thread-list button.unseen { background: #f4f9f7; }
+  .thread-list button.unseen .who { font-weight: 700; }
+  .thread-list button.unseen .last { color: var(--ink); }
+  .unseen-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none; }
+
+  .rail a .count.alert-count { color: #fff; background: var(--stop); border-radius: 20px; padding: 0 7px; font-size: 12px; }
+  .rail a[aria-current="page"] .count.alert-count { color: #fff; }
 
   .empty { padding: 44px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
   .empty b { display: block; color: var(--ink); font-size: 15.5px; margin-bottom: 3px; }
@@ -264,7 +277,8 @@
     .rail { display: none; }
     main { padding: 18px 16px calc(84px + env(safe-area-inset-bottom)); }
     .inbox { grid-template-columns: 1fr; height: auto; }
-    .thread-list { max-height: 210px; }
+    /* Rows carry a status line now, so keep roughly three visible. */
+    .thread-list { max-height: 310px; }
     .thread { height: 440px; }
     .panel { padding: 17px 16px; border-radius: 8px; }
     .bubble { max-width: 88%; }
@@ -281,6 +295,12 @@
     }
     .tabbar button[aria-current="page"] { color: #fff; }
     .tabbar svg { width: 21px; height: 21px; }
+    .tabbar button { position: relative; }
+    .tab-badge {
+      position: absolute; top: 0; left: 50%; margin-left: 5px;
+      background: var(--stop); color: #fff; border-radius: 20px;
+      font-size: 10.5px; font-weight: 700; padding: 0 5px; line-height: 15px;
+    }
     .mobile-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .mobile-head .brand { padding: 0; font-size: 16px; color: var(--ink); }
   }
@@ -308,7 +328,7 @@
     <div class="rail-group">
       <h2>Work</h2>
       <a data-view="leads">Leads <span class="count" id="railLeadCount"></span></a>
-      <a data-view="inbox">Inbox</a>
+      <a data-view="inbox">Inbox <span class="count" id="railInboxCount"></span></a>
     </div>
 
     <div class="rail-foot">
@@ -340,7 +360,7 @@
 
       <div class="panel">
         <h2>Needs you</h2>
-        <p class="lede">People the bot has handed over, or who asked for a call back.</p>
+        <p class="lede">Anyone the bot could not finish with: unanswered messages, call-back requests, and conversations you took over.</p>
         <div id="needsYou"></div>
       </div>
     </section>
@@ -519,6 +539,7 @@
         <div class="thread">
           <div class="thread-head">
             <b id="threadWho">Pick a conversation</b>
+            <span id="threadState"></span>
             <label class="switch" style="margin:0 0 0 auto">
               <input type="checkbox" id="takeoverToggle" disabled>
               <span class="track"></span>
@@ -654,6 +675,7 @@
   <button data-view="inbox">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     Inbox
+    <span class="tab-badge" id="tabInboxCount" style="display:none"></span>
   </button>
   <button data-view="settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
@@ -742,7 +764,7 @@ function showView(name, fromHash) {
   });
   window.scrollTo(0, 0);
   if (name === 'leads') loadLeads();
-  if (name === 'inbox') loadThreads();
+  if (name === 'inbox' || name === 'overview') loadThreads();
   if (name === 'activity') loadLog();
   if (name === 'instagram') loadInstagram();
 }
@@ -1051,7 +1073,6 @@ async function loadLeads() {
   leads = data;
   document.getElementById('railLeadCount').textContent = leads.length || '';
   renderLeads();
-  renderNeedsYou();
 }
 
 function renderLeads() {
@@ -1122,7 +1143,7 @@ document.querySelectorAll('.filters [data-filter]').forEach((btn) => {
 });
 
 function renderNeedsYou() {
-  const rows = leads.filter((l) => l.humanTakeover === true || l.priceCallbackNotified === true);
+  const rows = threads.filter(needsAttention);
   const box = document.getElementById('needsYou');
   if (!rows.length) {
     box.innerHTML = '<div class="empty"><b>Nothing waiting</b>The bot is handling everything on its own.</div>';
@@ -1130,8 +1151,15 @@ function renderNeedsYou() {
   }
   box.innerHTML = '<table><tbody>' + rows.map((l) => `
     <tr>
-      <td><b>${esc(displayName(l))}</b><br><span class="note">${l.humanTakeover ? 'You took this one over' : 'Asked for a call back'}</span></td>
-      <td style="text-align:right"><button class="btn quiet small" data-open="${esc(l.phone)}">Open</button></td>
+      <td>
+        <b>${esc(displayName(l))}</b>
+        <span class="pill ch-${channelOf(l.phone)}" style="margin-left:6px">${channelOf(l.phone) === 'instagram' ? 'Instagram' : 'WhatsApp'}</span>
+        <br><span class="note">${esc(attentionOf(l).label)}${l.lastMessage ? ' &middot; ' + esc(l.lastMessage.slice(0, 60)) : ''}</span>
+      </td>
+      <td style="text-align:right; white-space:nowrap">
+        <span class="note">${when(l.lastMessageAt)}</span>
+        <button class="btn quiet small" data-open="${esc(l.phone)}" style="margin-left:8px">Open</button>
+      </td>
     </tr>`).join('') + '</tbody></table>';
 
   box.querySelectorAll('[data-open]').forEach((el) => {
@@ -1144,11 +1172,41 @@ function renderNeedsYou() {
 let threads = [];
 let activeKey = null;
 
+/**
+ * Instagram's own read state cannot be set through either provider, so the
+ * badge on the phone stays lit whatever the bot does. These labels are the
+ * replacement, and they say more than an unread badge ever could: whether
+ * the bot dealt with it, or whether it is actually waiting for a person.
+ */
+function attentionOf(t) {
+  if (t.attention === 'takeover') return { cls: 'att-takeover', label: "You're answering this one" };
+  if (t.attention === 'callback') return { cls: 'att-callback', label: 'Asked for a call back' };
+  if (t.attention === 'unanswered') return { cls: 'att-unanswered', label: 'Not answered yet' };
+  if (t.answered) return { cls: 'att-handled', label: 'Bot answered' };
+  return { cls: 'att-handled', label: 'No messages yet' };
+}
+
+function needsAttention(t) {
+  return Boolean(t.attention);
+}
+
 async function loadThreads() {
   const data = await getJson('/api/chats');
   if (!data) return;
   threads = data;
   renderThreadList();
+  renderNeedsYou();
+
+  // The sidebar count is the whole point of this: it answers "is there
+  // anything for me?" without opening Instagram at all.
+  const waiting = threads.filter(needsAttention).length;
+  const badge = document.getElementById('railInboxCount');
+  badge.textContent = waiting || '';
+  badge.className = waiting ? 'count alert-count' : 'count';
+
+  const tab = document.getElementById('tabInboxCount');
+  tab.textContent = waiting > 9 ? '9+' : String(waiting);
+  tab.style.display = waiting ? 'block' : 'none';
 }
 
 function renderThreadList() {
@@ -1157,11 +1215,19 @@ function renderThreadList() {
     box.innerHTML = '<div class="empty"><b>No conversations</b>They show up as people message.</div>';
     return;
   }
-  box.innerHTML = threads.map((t) => `
-    <button data-key="${esc(t.phone)}" ${t.phone === activeKey ? 'aria-current="true"' : ''}>
-      <span class="who"><span class="pill ch-${channelOf(t.phone)}" style="padding:0 7px">${channelOf(t.phone) === 'instagram' ? 'IG' : 'WA'}</span><span>${esc(displayName(t))}</span></span>
+  box.innerHTML = threads.map((t) => {
+    const a = attentionOf(t);
+    return `
+    <button data-key="${esc(t.phone)}" class="${t.unseen ? 'unseen' : ''}" ${t.phone === activeKey ? 'aria-current="true"' : ''}>
+      <span class="who">
+        <span class="pill ch-${channelOf(t.phone)}" style="padding:0 7px">${channelOf(t.phone) === 'instagram' ? 'IG' : 'WA'}</span>
+        <span>${esc(displayName(t))}</span>
+        ${t.unseen ? '<span class="unseen-dot" title="New since you last looked"></span>' : ''}
+      </span>
       <span class="last">${esc(t.lastMessage || 'No messages yet')}</span>
-    </button>`).join('');
+      ${t.lastMessage ? `<span class="last" style="margin-top:4px"><span class="pill ${a.cls}">${esc(a.label)}</span></span>` : ''}
+    </button>`;
+  }).join('');
 
   box.querySelectorAll('[data-key]').forEach((el) => {
     el.addEventListener('click', () => openThread(el.dataset.key));
@@ -1170,10 +1236,18 @@ function renderThreadList() {
 
 async function openThread(key) {
   activeKey = key;
-  renderThreadList();
 
   const lead = threads.find((t) => t.phone === key) || leads.find((l) => l.phone === key) || { phone: key };
+  // Opening it here is what "seen" means now, so clear the flag straight
+  // away rather than waiting for the next poll to catch up.
+  if (lead.unseen) lead.unseen = false;
+  renderThreadList();
+
   document.getElementById('threadWho').textContent = displayName(lead);
+
+  const st = attentionOf(lead);
+  document.getElementById('threadState').innerHTML =
+    lead.lastMessage ? `<span class="pill ${st.cls}">${esc(st.label)}</span>` : '';
 
   const toggle = document.getElementById('takeoverToggle');
   toggle.disabled = false;
@@ -1423,7 +1497,7 @@ async function boot() {
   if (health && health.business) {
     document.getElementById('railBiz').textContent = health.business;
   }
-  await Promise.all([loadStatus(), loadSettings(), loadLeads()]);
+  await Promise.all([loadStatus(), loadSettings(), loadLeads(), loadThreads()]);
   await loadInstagram();
   const fromHash = window.location.hash.replace('#', '');
   if (fromHash) showView(fromHash, true);
@@ -1443,8 +1517,10 @@ setInterval(() => {
 }, 5000);
 
 setInterval(() => {
-  if (currentView === 'leads' || currentView === 'overview') loadLeads();
-  if (currentView === 'inbox') loadThreads();
+  if (currentView === 'leads') loadLeads();
+  // The overview and the sidebar count both come from the thread list, so it
+  // has to keep refreshing even while the inbox itself is closed.
+  if (currentView === 'inbox' || currentView === 'overview') loadThreads();
   // The log is what you stare at while setting a channel up, so it has to
   // move on its own rather than needing the page reloaded.
   if (currentView === 'activity') loadLog();

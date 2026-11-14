@@ -121,6 +121,11 @@ function newLead(phone) {
     interestedNotified: false,
     bookedNotified: false,
     priceCallbackNotified: false,
+    // When this conversation was last opened in the dashboard. Instagram's
+    // own read state cannot be set through the providers we use, so the
+    // dashboard keeps its own - that is what tells you what you have
+    // actually looked at.
+    dashboardSeenAt: '',
   };
 }
 
@@ -132,7 +137,7 @@ function newLead(phone) {
  */
 const BOOLEAN_FIELDS = ['reviewSent', 'humanTakeover', 'interestedNotified', 'bookedNotified', 'priceCallbackNotified'];
 const NUMBER_FIELDS = ['followupCount', 'reviewReminderCount'];
-const DATE_FIELDS = ['createdAt', 'lastContacted', 'reviewRequestedAt'];
+const DATE_FIELDS = ['createdAt', 'lastContacted', 'reviewRequestedAt', 'dashboardSeenAt'];
 
 function toBool(value) {
   return value === true || String(value).trim().toLowerCase() === 'true';
@@ -274,14 +279,59 @@ function getMessages(phone) {
   return loadMessages()[phone] || [];
 }
 
+/**
+ * Works out what a conversation needs from the person running it.
+ *
+ * Instagram's read state cannot be set through either provider, so the badge
+ * on the phone stays lit whatever the bot does. This is the replacement: the
+ * dashboard decides for itself what is handled and what is waiting, which is
+ * more use anyway - an unread badge cannot tell you the bot already answered.
+ *
+ * Returns, for one thread:
+ *   attention  - why it needs a person: takeover | unanswered | callback | null
+ *   unseen     - someone wrote since this thread was last opened here
+ *   answered   - the newest incoming message has a reply after it
+ */
+function threadState(lead, thread) {
+  const inbound = [...thread].reverse().find((m) => m.role === 'user');
+  const lastInboundAt = inbound ? inbound.timestamp : null;
+
+  const reply = [...thread].reverse().find((m) => m.role === 'assistant' || m.role === 'human');
+  const lastReplyAt = reply ? reply.timestamp : null;
+
+  const answered = Boolean(
+    lastInboundAt && lastReplyAt && new Date(lastReplyAt) >= new Date(lastInboundAt)
+  );
+
+  let attention = null;
+  if (lead.humanTakeover === true) attention = 'takeover';
+  else if (lead.priceCallbackNotified === true) attention = 'callback';
+  else if (lastInboundAt && !answered) attention = 'unanswered';
+
+  const seenAt = lead.dashboardSeenAt ? new Date(lead.dashboardSeenAt) : null;
+  const unseen = Boolean(lastInboundAt && (!seenAt || new Date(lastInboundAt) > seenAt));
+
+  return { attention, unseen, answered, lastInboundAt, lastReplyAt };
+}
+
 /** Leads plus their last message - powers the dashboard chat list. */
 function getChats() {
   const messages = loadMessages();
   return getAllLeads().map((lead) => {
     const thread = messages[lead.phone] || [];
     const last = thread[thread.length - 1];
-    return { ...lead, lastMessage: last?.text || '', lastMessageAt: last?.timestamp || lead.lastContacted };
+    return {
+      ...lead,
+      lastMessage: last?.text || '',
+      lastMessageAt: last?.timestamp || lead.lastContacted,
+      ...threadState(lead, thread),
+    };
   });
+}
+
+/** Called when a conversation is opened in the dashboard. */
+function markThreadSeen(phone) {
+  return upsertLead(phone, { dashboardSeenAt: new Date().toISOString() });
 }
 
 /* ---------------- Restore from Sheet on startup ----------------
@@ -366,4 +416,6 @@ module.exports = {
   logMessage,
   getMessages,
   getChats,
+  markThreadSeen,
+  threadState,
 };

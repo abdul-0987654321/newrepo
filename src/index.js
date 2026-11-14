@@ -153,8 +153,13 @@ async function main() {
     res.json(store.getChats());
   });
 
+  // Opening a conversation here counts as having read it. Instagram's own
+  // read state cannot be set through either provider, so this is what the
+  // "needs you" counts are built on.
   app.get('/api/chats/:phone/messages', requireDashboardAuth, (req, res) => {
-    res.json(store.getMessages(req.params.phone));
+    const messages = store.getMessages(req.params.phone);
+    if (req.query.markSeen !== 'false') store.markThreadSeen(req.params.phone);
+    res.json(messages);
   });
 
   app.post('/api/chats/:phone/takeover', requireDashboardAuth, (req, res) => {
