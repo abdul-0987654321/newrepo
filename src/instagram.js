@@ -206,14 +206,30 @@ function verifyInstantDmSignature(req) {
   }
 
   const header = req.get('x-webhook-signature') || '';
-  if (!header || !req.rawBody) return false;
+  if (!header) return false;
 
   // Their docs show a bare hex digest; some of their examples show the
   // "sha256=" prefix Meta uses. Accept either rather than reject a good one.
   const sent = header.startsWith('sha256=') ? header.slice(7) : header;
-  const expected = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
 
-  return sameDigest(sent, expected);
+  // Their own sample signs JSON.stringify(payload) while their docs say the
+  // raw body. Those are normally the same bytes, but not if anything on the
+  // way re-encodes the request. Accept either, so a genuine message is never
+  // thrown away over a formatting detail - both still prove the secret.
+  const candidates = [];
+  if (req.rawBody) candidates.push(req.rawBody);
+  if (req.body) {
+    try {
+      const restringified = JSON.stringify(req.body);
+      if (!req.rawBody || restringified !== req.rawBody.toString('utf8')) {
+        candidates.push(restringified);
+      }
+    } catch (err) { /* unserialisable body - the raw one is all we have */ }
+  }
+
+  return candidates.some((payload) =>
+    sameDigest(sent, crypto.createHmac('sha256', secret).update(payload).digest('hex'))
+  );
 }
 
 /* ------------------------- Incoming messages ------------------------- */
