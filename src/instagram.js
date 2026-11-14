@@ -67,7 +67,7 @@ const SEEN_MESSAGE_IDS = new Map();
 const SEEN_TTL_MS = 10 * 60 * 1000;
 
 const stats = {
-  posts: 0,          // raw webhook POSTs from Meta, before any filtering
+  posts: 0,          // raw webhook POSTs from the provider, before filtering
   lastPostAt: null,
   received: 0,
   replied: 0,
@@ -261,7 +261,10 @@ function handleWebhook(req, res) {
   }
 
   const events = extractEvents(body);
-  log.logInfo('instagram', `Webhook POST received from Meta with ${events.length} event(s).`);
+  // Name the provider the message actually came through: reading "from Meta"
+  // while running on InstantDM makes the log useless for working out which
+  // half of the chain is at fault.
+  log.logInfo('instagram', `Webhook POST received from ${usingInstantDm() ? 'InstantDM' : 'Meta'} with ${events.length} event(s).`);
 
   // With nothing to act on, record the shape rather than the content: it is
   // the only way to tell a harmless test ping from a payload we failed to
