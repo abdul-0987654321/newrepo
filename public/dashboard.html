@@ -1410,9 +1410,12 @@ function renderTry() {
   const igUser = (settings.igUsername || '').replace(/^@/, '').trim();
   const igLink = document.getElementById('tryInstagram');
   if (igUser) {
-    igLink.href = 'https://ig.me/m/' + encodeURIComponent(igUser);
+    // The profile page rather than ig.me: that short domain is unreachable
+    // on some networks, and a demo link that times out is worse than one
+    // extra tap. This opens the Instagram app on a phone.
+    igLink.href = 'https://www.instagram.com/' + encodeURIComponent(igUser) + '/';
     igLink.removeAttribute('aria-disabled');
-    document.getElementById('tryInstagramWho').textContent = '@' + igUser;
+    document.getElementById('tryInstagramWho').textContent = '@' + igUser + ' — then tap Message';
   } else {
     igLink.removeAttribute('href');
     igLink.setAttribute('aria-disabled', 'true');
