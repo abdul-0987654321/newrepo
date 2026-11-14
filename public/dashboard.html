@@ -419,15 +419,15 @@
 
       <div class="panel">
         <h2>Setup</h2>
-        <p class="lede">Instagram replies run on Meta's official API. Each item below has to be done once.</p>
+        <p class="lede" id="igSetupLede">Each item below has to be done once.</p>
         <div id="igChecklist"></div>
 
         <details class="more">
           <summary>Where the webhook URL goes</summary>
           <div>
-            <p class="note">In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:</p>
+            <p class="note" id="igWebhookWhere">—</p>
             <p class="note" style="margin-top:8px"><b id="igWebhookUrl">—</b></p>
-            <p class="note" style="margin-top:8px">Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.</p>
+            <p class="note" style="margin-top:8px" id="igWebhookThen"></p>
           </div>
         </details>
       </div>
@@ -461,7 +461,7 @@
           <li>The bot can only reply within 24 hours of someone messaging. It can never message first.</li>
           <li>Around 200 automated messages per hour, per account.</li>
           <li>The account must be a professional one — Business or Creator, not personal.</li>
-          <li>Until Meta approves the app, only accounts added as testers can use it.</li>
+          <li id="igProviderLimit">Until Meta approves the app, only accounts added as testers can use it.</li>
         </ul>
       </div>
     </section>
@@ -907,51 +907,90 @@ async function loadInstagram() {
   const state = !ig.configured ? 'watch' : (ig.connected ? 'live' : 'stop');
   document.getElementById('igBeacon').className = 'beacon ' + state;
 
+  const viaInstantDm = ig.provider === 'instantdm';
+  const carrier = viaInstantDm ? 'InstantDM' : 'Meta';
+
   const title = document.getElementById('igStatus');
   const help = document.getElementById('igHelp');
   if (!ig.configured) {
     title.textContent = 'Not set up yet';
-    help.textContent = 'Add the Meta app details to the environment variables, then this page will show the connection.';
+    help.textContent = ig.missingSetting
+      ? 'Set ' + ig.missingSetting + ' in the environment variables, then this page will show the connection.'
+      : 'Add the connection details to the environment variables.';
   } else if (ig.connected) {
     title.textContent = 'Connected';
-    help.textContent = 'Answering DMs as @' + (ig.username || 'your account') + '.';
+    help.textContent = viaInstantDm
+      ? 'Replies go out through InstantDM. The answers are written by your own AI.'
+      : 'Answering DMs as @' + (ig.username || 'your account') + '.';
   } else {
     title.textContent = 'Not connected';
-    help.textContent = ig.reason || 'The access token was rejected by Meta.';
+    help.textContent = ig.reason || 'The credentials were rejected.';
   }
 
   const sub = ig.subscription || {};
-  const items = [
-    { done: Boolean(ig.accountId), label: 'Instagram professional account linked', detail: ig.accountId ? 'Account ' + ig.accountId : 'Set IG_ACCOUNT_ID' },
+  const gotDm = (ig.received || 0) > 0;
+  const reaching = (ig.posts || 0) > 0;
+
+  // The route to Instagram differs by provider, so the steps do too. The
+  // last two are the same either way: is anything arriving, and did a real
+  // DM get answered.
+  const items = viaInstantDm
+    ? [
+      {
+        done: ig.configured,
+        label: 'InstantDM API key set',
+        detail: ig.configured ? 'Sending through ' + ig.graphHost : 'Set INSTANTDM_API_KEY',
+      },
+      {
+        done: ig.signatureChecked,
+        label: 'Webhook signature checked',
+        detail: ig.signatureChecked
+          ? 'Payloads are verified against INSTANTDM_WEBHOOK_SECRET'
+          : 'INSTANTDM_WEBHOOK_SECRET is not set, so anyone who learns this URL could post fake messages.',
+      },
+    ]
+    : [
+      { done: Boolean(ig.accountId), label: 'Instagram professional account linked', detail: ig.accountId ? 'Account ' + ig.accountId : 'Set IG_ACCOUNT_ID' },
+      {
+        done: ig.connected === true,
+        label: 'Access token works',
+        detail: ig.connected
+          ? 'Verified with Meta just now · ' + (ig.tokenKind === 'instagram-login' ? 'Instagram login' : 'Unified login') + ' · ' + (ig.graphHost || '')
+          : (ig.reason || 'Set IG_ACCESS_TOKEN'),
+      },
+      {
+        done: sub.hasMessages === true,
+        label: 'Meta will forward real DMs',
+        detail: !sub.ok
+          ? (sub.reason || 'Could not ask Meta.')
+          : (sub.hasMessages
+            ? 'Subscribed to: ' + sub.fields.join(', ')
+            : (sub.fields && sub.fields.length
+              ? 'Subscribed to ' + sub.fields.join(', ') + ' but NOT messages - turn the messages field on in the Meta app.'
+              : 'Meta has no subscription for this account. Real DMs will never arrive. Turn the messages field on in the Meta app, section 3.')),
+      },
+    ];
+
+  items.push(
     {
-      done: ig.connected === true,
-      label: 'Access token works',
-      detail: ig.connected
-        ? 'Verified with Meta just now · ' + (ig.tokenKind === 'instagram-login' ? 'Instagram login' : 'Unified login') + ' · ' + (ig.graphHost || '')
-        : (ig.reason || 'Set IG_ACCESS_TOKEN'),
-    },
-    {
-      done: sub.hasMessages === true,
-      label: 'Meta will forward real DMs',
-      detail: !sub.ok
-        ? (sub.reason || 'Could not ask Meta.')
-        : (sub.hasMessages
-          ? 'Subscribed to: ' + sub.fields.join(', ')
-          : (sub.fields && sub.fields.length
-            ? 'Subscribed to ' + sub.fields.join(', ') + ' but NOT messages - turn the messages field on in the Meta app.'
-            : 'Meta has no subscription for this account. Real DMs will never arrive. Turn the messages field on in the Meta app, section 3.')),
-    },
-    {
-      done: Boolean(ig.webhookVerifiedAt) || (ig.posts || 0) > 0,
-      label: 'Meta is reaching your server',
-      detail: (ig.posts || 0) > 0
+      done: reaching || Boolean(ig.webhookVerifiedAt),
+      label: carrier + ' is reaching your server',
+      detail: reaching
         ? (ig.posts + ' webhook call(s), last ' + when(ig.lastPostAt))
         : (ig.webhookVerifiedAt
           ? 'URL verified ' + when(ig.webhookVerifiedAt) + ', no events yet'
-          : 'No call from Meta yet. Check the messages field is Subscribed in the Meta app.'),
+          : (viaInstantDm
+            ? 'Nothing yet. Turn the webhook on in InstantDM and point it at the URL below.'
+            : 'No call from Meta yet. Check the messages field is Subscribed in the Meta app.')),
     },
-    { done: (ig.received || 0) > 0, label: 'A DM has come through', detail: (ig.received || 0) > 0 ? ig.received + ' received, ' + (ig.replied || 0) + ' answered' : 'Send a test DM from another account' },
-  ];
+    {
+      done: gotDm,
+      label: 'A DM has come through',
+      detail: gotDm
+        ? ig.received + ' received, ' + (ig.replied || 0) + ' answered'
+        : 'Send a test DM from another account',
+    }
+  );
 
   document.getElementById('igChecklist').innerHTML =
     '<table><tbody>' + items.map((i) => `
@@ -961,6 +1000,22 @@ async function loadInstagram() {
       </tr>`).join('') + '</tbody></table>';
 
   document.getElementById('igWebhookUrl').textContent = window.location.origin + '/webhook/instagram';
+
+  document.getElementById('igSetupLede').textContent = viaInstantDm
+    ? 'Messages travel through InstantDM, so no Meta App Review is needed. Each item below has to be done once.'
+    : "Instagram replies run on Meta's official API. Each item below has to be done once.";
+
+  document.getElementById('igWebhookWhere').textContent = viaInstantDm
+    ? 'In InstantDM, open API & MCP, then Webhooks, turn the webhook on and paste this as the URL:'
+    : 'In the Meta app, open the Instagram use case, then Configure webhooks, and paste this as the callback URL:';
+
+  document.getElementById('igWebhookThen').innerHTML = viaInstantDm
+    ? 'Subscribe to the <b>dm_received</b> event, and copy the signing secret into <b>INSTANTDM_WEBHOOK_SECRET</b>.'
+    : 'Use the same verify token you set in <b>IG_VERIFY_TOKEN</b>, then subscribe to the <b>messages</b> field.';
+
+  document.getElementById('igProviderLimit').textContent = viaInstantDm
+    ? 'Every reply sent costs one InstantDM credit.'
+    : 'Until Meta approves the app, only accounts added as testers can use it.';
 
   if (ig.lastError) {
     const h = document.getElementById('igHelp');

@@ -31,6 +31,16 @@ services:
         value: /var/data/auth_info
       # Instagram DM bot. Leave these unset and the app runs WhatsApp-only,
       # with the Instagram section showing as "not set up".
+      #
+      # IG_PROVIDER picks who carries the messages:
+      #   meta      - our own Meta app (needs App Review before real DMs arrive)
+      #   instantdm - InstantDM's approved app (paid tier, no review needed)
+      - key: IG_PROVIDER
+        value: meta
+      - key: INSTANTDM_API_KEY
+        sync: false
+      - key: INSTANTDM_WEBHOOK_SECRET
+        sync: false
       - key: IG_APP_ID
         sync: false
       - key: IG_APP_SECRET

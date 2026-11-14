@@ -1,12 +1,23 @@
 'use strict';
 /**
- * instagram.js - Instagram Direct Message bot via Meta's official Instagram API.
+ * instagram.js - Instagram Direct Message bot.
  *
  * Flow:
- *   Instagram DM -> Meta webhook -> POST /webhook/instagram -> AI reply -> Graph Send API
+ *   Instagram DM -> webhook -> POST /webhook/instagram -> AI reply -> send
  *
- * Meta's rules that are enforced here (not optional - breaking them gets the
- * app rejected or the account limited):
+ * Two providers can carry those messages, chosen by IG_PROVIDER:
+ *   "meta"      - our own Meta app talking to the Graph API directly. Free,
+ *                 but Instagram only forwards real DMs once Meta has
+ *                 approved the app, so it is silent until then.
+ *   "instantdm" - InstantDM's already-approved app acts as the pipe. No App
+ *                 Review, but their API is a paid tier.
+ *
+ * Only the signature check and the send call differ between them: InstantDM
+ * forwards Meta's own payload shape, so everything in between - parsing, the
+ * AI reply, the lead store, the dashboard - is shared.
+ *
+ * Instagram's own rules are enforced here whichever provider is in use,
+ * because they come from Meta either way:
  *   - We can only reply INSIDE the 24-hour window that opens when the user
  *     messages us. We never send the first message.
  *   - Every webhook payload is signature-checked against the app secret.
@@ -73,8 +84,24 @@ function ai() {
   return openaiClient;
 }
 
+/** True when IG_PROVIDER names InstantDM rather than our own Meta app. */
+function usingInstantDm() {
+  return config.instagram.provider === 'instantdm';
+}
+
 function isConfigured() {
+  if (usingInstantDm()) return Boolean(config.instagram.instantdmApiKey);
   return Boolean(config.instagram.accessToken && config.instagram.accountId);
+}
+
+/** What is missing, in the words of the setting the person has to fill in. */
+function missingSetting() {
+  if (usingInstantDm()) {
+    return config.instagram.instantdmApiKey ? null : 'INSTANTDM_API_KEY';
+  }
+  if (!config.instagram.accessToken) return 'IG_ACCESS_TOKEN';
+  if (!config.instagram.accountId) return 'IG_ACCOUNT_ID';
+  return null;
 }
 
 function rememberMessageId(id) {
@@ -134,11 +161,28 @@ function handleVerification(req, res) {
   return res.sendStatus(403);
 }
 
+/** Constant-time compare that tolerates different lengths. */
+function sameDigest(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
 /**
- * Meta signs every POST with the app secret. Without this check anyone who
- * learns the URL could feed fake messages into the bot.
+ * Both providers sign the POST so that nobody who merely learns the URL can
+ * feed fake messages into the bot. The algorithm is the same - HMAC-SHA256
+ * over the RAW body - but the header and the secret differ:
+ *   meta:      x-hub-signature-256, "sha256=<hex>", signed with the app secret
+ *   instantdm: x-webhook-signature, bare hex, signed with the webhook secret
+ *
+ * The raw bytes matter: re-serialising the parsed JSON can reorder keys or
+ * change spacing, and then a perfectly valid signature fails.
  */
 function verifySignature(req) {
+  return usingInstantDm() ? verifyInstantDmSignature(req) : verifyMetaSignature(req);
+}
+
+function verifyMetaSignature(req) {
   if (!config.instagram.appSecret) {
     log.logWarn('instagram', 'IG_APP_SECRET is not set - webhook payloads are NOT signature-checked.');
     return true;
@@ -151,9 +195,25 @@ function verifySignature(req) {
     .update(req.rawBody)
     .digest('hex')}`;
 
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  return sameDigest(header, expected);
+}
+
+function verifyInstantDmSignature(req) {
+  const secret = config.instagram.instantdmWebhookSecret;
+  if (!secret) {
+    log.logWarn('instagram', 'INSTANTDM_WEBHOOK_SECRET is not set - webhook payloads are NOT signature-checked.');
+    return true;
+  }
+
+  const header = req.get('x-webhook-signature') || '';
+  if (!header || !req.rawBody) return false;
+
+  // Their docs show a bare hex digest; some of their examples show the
+  // "sha256=" prefix Meta uses. Accept either rather than reject a good one.
+  const sent = header.startsWith('sha256=') ? header.slice(7) : header;
+  const expected = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+
+  return sameDigest(sent, expected);
 }
 
 /* ------------------------- Incoming messages ------------------------- */
@@ -392,15 +452,25 @@ async function generateReply(leadKey, text) {
 
 /* ------------------------- Sending ------------------------- */
 
+const INSTANTDM_ACTION_URL = 'https://openapi.instantdm.com/action';
+
 /**
- * Sends a DM through the Instagram Send API. Only valid inside the 24-hour
- * window - Meta returns error code 10 / subcode 2534022 once it has closed.
+ * Sends a DM. Only valid inside the 24-hour window whichever provider is
+ * used, because the limit is Meta's: the Graph API answers with error code
+ * 10 / subcode 2534022 once it has closed, and InstantDM passes that on.
  */
 async function sendMessage(recipientId, text) {
-  if (!isConfigured()) {
-    throw new Error('Instagram is not configured - set IG_ACCESS_TOKEN and IG_ACCOUNT_ID.');
+  const missing = missingSetting();
+  if (missing) {
+    throw new Error(`Instagram is not configured - set ${missing}.`);
   }
+  const body = String(text).slice(0, 1000);
+  return usingInstantDm()
+    ? sendViaInstantDm(recipientId, body)
+    : sendViaMeta(recipientId, body);
+}
 
+async function sendViaMeta(recipientId, text) {
   const url = `${graphBase()}/${config.instagram.accountId}/messages`;
   const response = await fetch(url, {
     method: 'POST',
@@ -410,7 +480,7 @@ async function sendMessage(recipientId, text) {
     },
     body: JSON.stringify({
       recipient: { id: String(recipientId) },
-      message: { text: String(text).slice(0, 1000) },
+      message: { text },
     }),
   });
 
@@ -428,6 +498,39 @@ async function sendMessage(recipientId, text) {
 }
 
 /**
+ * InstantDM exposes one endpoint that takes an "action". Every sent message
+ * costs one credit of their plan, so a failure here is worth logging
+ * precisely rather than retrying blindly.
+ */
+async function sendViaInstantDm(recipientId, text) {
+  const response = await fetch(INSTANTDM_ACTION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.instagram.instantdmApiKey}`,
+    },
+    body: JSON.stringify({
+      action: 'send_message',
+      type: 'text',
+      recipient_id: String(recipientId),
+      message: text,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    const reason =
+      (payload.error && (payload.error.message || payload.error)) ||
+      payload.message ||
+      `HTTP ${response.status}`;
+    stats.failed += 1;
+    stats.lastError = String(reason);
+    throw new Error(`InstantDM send failed (${response.status}): ${reason}`);
+  }
+  return payload;
+}
+
+/**
  * Asks Meta which webhook fields IT thinks this app is subscribed to for
  * this account. The toggles in Meta's console are easy to misread and a
  * subscription can go stale, so this is the only way to know for certain
@@ -435,6 +538,11 @@ async function sendMessage(recipientId, text) {
  * to "Meta reaches my server for Test payloads but never for real DMs".
  */
 async function checkSubscription() {
+  // Only meaningful for our own Meta app. With InstantDM the subscription is
+  // theirs, and what matters instead is whether their webhook points here.
+  if (usingInstantDm()) {
+    return { ok: true, notApplicable: true, hasMessages: true, fields: [] };
+  }
   if (!isConfigured()) {
     return { ok: false, reason: 'Instagram is not configured yet.' };
   }
@@ -475,11 +583,25 @@ async function sendManualMessage(leadKey, text) {
 
 /* ------------------------- Status ------------------------- */
 
-/** Confirms the token actually works, so the dashboard can show a real state. */
+/** Confirms the credentials actually work, so the dashboard shows a real state. */
 async function checkConnection() {
-  if (!isConfigured()) {
-    return { connected: false, reason: 'Not configured - IG_ACCESS_TOKEN or IG_ACCOUNT_ID is missing.' };
+  const missing = missingSetting();
+  if (missing) {
+    return { connected: false, reason: `Not configured - ${missing} is missing.` };
   }
+
+  // InstantDM's API has no free "who am I" call, and every send costs a
+  // credit, so we do not burn one to draw a green dot. The key is reported
+  // as present, and the first real reply proves the rest.
+  if (usingInstantDm()) {
+    return {
+      connected: true,
+      provider: 'instantdm',
+      unverified: true,
+      reason: 'API key is set. InstantDM has no free status call, so this is confirmed by the first reply it sends.',
+    };
+  }
+
   try {
     // graph.facebook.com/me on a Unified-login token resolves to the user,
     // not the Instagram account, so ask for the account by its id instead.
@@ -505,9 +627,16 @@ async function checkConnection() {
 function getStatusPayload() {
   return {
     configured: isConfigured(),
+    provider: usingInstantDm() ? 'instantdm' : 'meta',
+    missingSetting: missingSetting(),
     accountId: config.instagram.accountId || null,
     tokenKind: tokenKind(),
-    graphHost: graphBase().replace('https://', '').split('/')[0],
+    graphHost: usingInstantDm()
+      ? 'openapi.instantdm.com'
+      : graphBase().replace('https://', '').split('/')[0],
+    signatureChecked: usingInstantDm()
+      ? Boolean(config.instagram.instantdmWebhookSecret)
+      : Boolean(config.instagram.appSecret),
     ...stats,
     webhookVerifiedAt: webhookVerifiedAt(),
   };

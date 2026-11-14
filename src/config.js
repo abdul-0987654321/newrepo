@@ -27,6 +27,18 @@ const config = {
   // unset the app runs exactly as before, with the Instagram section showing
   // as "not configured" on the dashboard instead of failing to boot.
   instagram: {
+    // Who carries the messages between us and Instagram:
+    //   "meta"      - our own Meta app. Free, full control, but Instagram
+    //                 only forwards real DMs once Meta approves the app.
+    //   "instantdm" - InstantDM's approved app acts as the pipe, so no App
+    //                 Review is needed. Their API is a paid tier.
+    // The AI, the conversation history and the dashboard are ours either way.
+    provider: (process.env.IG_PROVIDER || 'meta').toLowerCase(),
+
+    // InstantDM only: the API key, and the webhook secret shown beside it.
+    instantdmApiKey: process.env.INSTANTDM_API_KEY || '',
+    instantdmWebhookSecret: process.env.INSTANTDM_WEBHOOK_SECRET || '',
+
     appId: process.env.IG_APP_ID || '',
     appSecret: process.env.IG_APP_SECRET || '',
     accessToken: process.env.IG_ACCESS_TOKEN || '',
