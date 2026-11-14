@@ -71,6 +71,7 @@ const stats = {
   lastPostAt: null,
   received: 0,
   replied: 0,
+  markedRead: 0,
   skippedOutsideWindow: 0,
   failed: 0,
   lastEventAt: null,
@@ -354,26 +355,46 @@ function handleWebhook(req, res) {
  * for the handful of names it could reasonably use. The first real delivery
  * then tells us the truth, logged as a shape with no message content.
  */
-function findValue(node, keys, depth = 0) {
+function findValue(node, keys, options = {}, depth = 0) {
+  const { allowId = false } = options;
   if (!node || typeof node !== 'object' || depth > 6) return null;
 
   for (const key of keys) {
     const value = node[key];
     if (typeof value === 'string' && value.trim()) return value;
+
     // "sender": { "id": ... } and "message": { "text": ... } both occur.
+    // Falling back to .id is right when looking for an identifier and
+    // actively wrong when looking for message text - that is how an id ends
+    // up displayed as what the customer said.
     if (value && typeof value === 'object') {
-      const nested = value.id || value.text || value.body;
+      const nested = allowId ? (value.id || value.text || value.body) : (value.text || value.body);
       if (typeof nested === 'string' && nested.trim()) return nested;
     }
   }
 
   for (const value of Object.values(node)) {
     if (value && typeof value === 'object') {
-      const found = findValue(value, keys, depth + 1);
+      const found = findValue(value, keys, options, depth + 1);
       if (found) return found;
     }
   }
   return null;
+}
+
+/**
+ * Guards against the same mistake from the other end: a value that parsed as
+ * "text" but is plainly an identifier. Showing an id as the customer's
+ * message is worse than showing nothing, because it looks like they sent it.
+ */
+function looksLikeAnId(value, ids) {
+  if (!value) return true;
+  const text = String(value).trim();
+  if (ids.some((id) => id && String(id) === text)) return true;
+  // A long unbroken run of hex or a UUID is an id, not something anyone typed.
+  if (/^[0-9a-f]{16,}$/i.test(text)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text)) return true;
+  return false;
 }
 
 const ZERNIO_FIELDS = {
@@ -398,11 +419,17 @@ function extractZernioEvents(body) {
   const meta = body.metadata || (body.data && body.data.metadata) || {};
   if (meta.isEcho === true || meta.echo === true) return [];
 
-  const conversationId = findValue(body, ZERNIO_FIELDS.conversation);
-  const text = findValue(body, ZERNIO_FIELDS.text);
-  if (!conversationId || !text) return [];
+  const conversationId = findValue(body, ZERNIO_FIELDS.conversation, { allowId: true });
+  const senderId = findValue(body, ZERNIO_FIELDS.sender, { allowId: true });
+  const messageId = findValue(body, ZERNIO_FIELDS.messageId, { allowId: true });
 
-  const senderId = findValue(body, ZERNIO_FIELDS.sender);
+  const text = findValue(body, ZERNIO_FIELDS.text);
+  if (!conversationId) return [];
+
+  if (looksLikeAnId(text, [conversationId, senderId, messageId, config.instagram.zernioAccountId])) {
+    log.logWarn('instagram', `A message.received payload had no readable text - the field names must differ from the ones expected. Shape: ${describeShape(body)}`);
+    return [];
+  }
 
   return [{
     // Without a sender we still have a conversation, which is enough both to
@@ -411,7 +438,7 @@ function extractZernioEvents(body) {
     conversationId,
     timestamp: body.timestamp ? new Date(body.timestamp).getTime() : Date.now(),
     message: {
-      mid: findValue(body, ZERNIO_FIELDS.messageId) || `${body.id || 'zernio'}:${conversationId}`,
+      mid: messageId || `${body.id || 'zernio'}:${conversationId}`,
       text,
     },
   }];
@@ -544,6 +571,12 @@ async function processEvent(event) {
     return;
   }
 
+  // Mark it seen BEFORE writing the reply. Generating an answer takes a few
+  // seconds, and in that gap the person is looking at an unread conversation
+  // wondering whether anyone is there. The receipt costs nothing and never
+  // blocks the reply.
+  void markConversationRead(event.conversationId);
+
   const reply = await generateReply(leadKey, text);
   if (!reply) return;
 
@@ -649,6 +682,47 @@ async function sendMessage(recipientId, text, options = {}) {
 }
 
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
+
+/**
+ * Sends a real mark_seen read receipt, so the person sees the conversation
+ * as read rather than being left with a lit notification the bot already
+ * dealt with. Only Zernio offers this - InstantDM has no endpoint for it and
+ * Meta's needs an approved app.
+ *
+ * Best-effort by design: Meta can drop the receipt without failing the call,
+ * and a receipt is never worth losing a reply over, so this never throws.
+ */
+async function markConversationRead(conversationId, { quiet = false } = {}) {
+  if (!usingZernio() || !conversationId || !isConfigured()) return false;
+
+  try {
+    const url = `${ZERNIO_API_BASE}/inbox/conversations/${encodeURIComponent(conversationId)}/read`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.instagram.zernioApiKey}`,
+      },
+      body: JSON.stringify({ accountId: config.instagram.zernioAccountId }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const reason = payload.error || payload.message || `HTTP ${response.status}`;
+      if (!quiet) {
+        log.logWarn('instagram', `Could not mark the conversation as seen: ${reason}`);
+      }
+      return false;
+    }
+    stats.markedRead += 1;
+    return true;
+  } catch (err) {
+    if (!quiet) {
+      log.logWarn('instagram', `Could not mark the conversation as seen: ${err.message}`);
+    }
+    return false;
+  }
+}
 
 /**
  * Zernio addresses the conversation, not the person, and the account id goes
@@ -788,6 +862,8 @@ async function checkSubscription() {
 async function sendManualMessage(leadKey, text) {
   const senderId = String(leadKey).replace(/^ig:/, '');
   const lead = store.getLead(`ig:${senderId}`) || {};
+  // Typing a reply by hand means it has certainly been read.
+  void markConversationRead(lead.conversationId);
   await sendMessage(senderId, text, { conversationId: lead.conversationId });
   store.logMessage(`ig:${senderId}`, 'human', text);
   return { ok: true };
@@ -888,6 +964,7 @@ module.exports = {
   handleWebhook,
   sendMessage,
   sendManualMessage,
+  markConversationRead,
   checkConnection,
   checkSubscription,
   getStatusPayload,

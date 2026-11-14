@@ -158,7 +158,15 @@ async function main() {
   // "needs you" counts are built on.
   app.get('/api/chats/:phone/messages', requireDashboardAuth, (req, res) => {
     const messages = store.getMessages(req.params.phone);
-    if (req.query.markSeen !== 'false') store.markThreadSeen(req.params.phone);
+    if (req.query.markSeen !== 'false') {
+      store.markThreadSeen(req.params.phone);
+      // Reading it here means it really has been read, so pass that on to
+      // Instagram where the provider supports it. Never block the response.
+      const lead = store.getLead(req.params.phone);
+      if (lead && lead.conversationId) {
+        void instagram.markConversationRead(lead.conversationId);
+      }
+    }
     res.json(messages);
   });
 
