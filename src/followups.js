@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const config = require('./config');
 const store = require('./store');
+const business = require('./business');
 const { sendWhatsAppMessage, isConnected } = require('./whatsapp');
 const log = require('./errors');
 
@@ -9,22 +10,30 @@ const log = require('./errors');
 const DEBUG = process.env.FOLLOWUP_DEBUG === '1';
 
 function followupText(template, name) {
-  const fallback = "Hi {name}, just checking back about your free measure with KSC Carpets - would you like to go ahead? Reply STOP if you'd rather we didn't contact you again.";
+  const businessName = business.profile().name;
+  const fallback = "Hi {name}, just following up on your enquiry with {business} - would you like to go ahead? Reply STOP if you'd rather we didn't contact you again.";
   const text = template || fallback;
-  return text.replaceAll('{name}', name || 'there');
+  return text
+    .replaceAll('{name}', name || 'there')
+    .replaceAll('{business}', businessName);
 }
 
 function reviewRequestText(name) {
-  const { name: businessName, googleReviewLink } = config.business;
+  const { googleReviewLink } = config.business;
+  const businessName = business.profile().name;
   const greeting = name ? `Hi ${name}, ` : 'Hi, ';
-  return `${greeting}thanks for choosing ${businessName}! If you're happy with your new carpet, we'd really appreciate a quick Google review: ${googleReviewLink}`;
+  return `${greeting}thanks for choosing ${businessName}! If you're happy with how it went, we'd really appreciate a quick Google review: ${googleReviewLink}`;
 }
 
 function reviewReminderText(template, name) {
   const { googleReviewLink } = config.business;
+  const businessName = business.profile().name;
   const fallback = "Hi {name}, just a quick reminder - we'd really appreciate a Google review when you get a moment: {reviewLink}";
   const text = template || fallback;
-  return text.replaceAll('{name}', name || 'there').replaceAll('{reviewLink}', googleReviewLink);
+  return text
+    .replaceAll('{name}', name || 'there')
+    .replaceAll('{business}', businessName)
+    .replaceAll('{reviewLink}', googleReviewLink);
 }
 
 /**

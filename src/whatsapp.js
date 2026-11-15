@@ -10,6 +10,7 @@ const pino = require('pino');
 
 const { getAIResponse } = require('./ai');
 const store = require('./store');
+const business = require('./business');
 const config = require('./config');
 const authStore = require('./authStore');
 const log = require('./errors');
@@ -77,7 +78,7 @@ function browserSignature(usingPairingCode) {
     if (Browsers && typeof Browsers.ubuntu === 'function') return Browsers.ubuntu('Chrome');
     return ['Ubuntu', 'Chrome', '110.0.5585.95'];
   }
-  return ['KSC Carpets Bot', 'Chrome', '120.0.0'];
+  return [`${business.profile().name} Bot`, 'Chrome', '120.0.0'];
 }
 
 function disconnectReasonName(statusCode) {
@@ -255,22 +256,25 @@ async function notifyAdmin(lead, reason = 'booked') {
     if (!adminNumber || !isConnected()) return;
 
     const headline = reason === 'price_callback'
-      ? `Customer wants a PRICE CALL (declined a visit) - ${lead.name || 'Unknown name'} (${lead.phone})`
+      ? `Customer wants a CALL BACK (declined the offer) - ${lead.name || 'Unknown name'} (${lead.phone})`
       : `Lead ready to book - ${lead.name || 'Unknown name'} (${lead.phone})`;
+
+    // The four flexible fields are labelled by the business profile, so this
+    // alert reads correctly whatever trade the bot is set up for.
+    const biz = business.profile();
 
     const lines = [
       headline,
-      lead.carpetType ? `Carpet: ${lead.carpetType}` : null,
-      lead.room ? `Room: ${lead.room}` : null,
-      lead.size ? `Size: ${lead.size}` : null,
-      lead.colour ? `Colour: ${lead.colour}` : null,
+      ...biz.fields.map(({ key, label }) =>
+        lead[key] ? `${label}: ${lead[key]}` : null
+      ),
       lead.budget ? `Budget: ${lead.budget}` : null,
       lead.customerAddress ? `Address: ${lead.customerAddress}` : null,
       lead.postcode ? `Postcode: ${lead.postcode}` : null,
       lead.contactNumber ? `Contact number given: ${lead.contactNumber}` : null,
       reason === 'price_callback'
-        ? 'Call them with a price - they did not want a measure visit.'
-        : `Wants to meet: ${lead.preferredTime || 'no time given yet - ask them'}`,
+        ? 'Call them back - they declined what the bot offered.'
+        : `Wants: ${lead.preferredTime || 'no time given yet - ask them'}`,
     ].filter(Boolean);
 
     await sock.sendMessage(`${adminNumber}@s.whatsapp.net`, { text: lines.join('\n') });
@@ -404,7 +408,7 @@ async function startWhatsApp() {
 
         try {
           console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-          console.log('Scan the QR above with the KSC Carpets WhatsApp number (or use the pairing code on the dashboard).');
+          console.log('Scan the QR above with the business WhatsApp number (or use the pairing code on the dashboard).');
           latestQrDataUrl = await QRCode.toDataURL(qr);
         } catch (err) {
           log.logError('whatsapp', err, 'Could not render the QR code');

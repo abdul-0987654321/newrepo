@@ -1,6 +1,6 @@
 'use strict';
 /**
- * store.js - KSC Carpets local-first data layer.
+ * store.js - local-first data layer.
  *
  * Leads, messages, and settings live in local JSON files under DATA_DIR.
  * All reads used by the bot and dashboard come from here - instant, no
@@ -46,7 +46,7 @@ function writeJson(file, data) {
 const DEFAULT_SETTINGS = {
   botEnabled: true,
   followupEnabled: true,
-  followupMessage: "Hi {name}, just checking back about your free measure with KSC Carpets - would you like to go ahead? Reply STOP if you'd rather we didn't contact you again.",
+  followupMessage: "Hi {name}, just following up on your enquiry with {business} - would you like to go ahead? Reply STOP if you'd rather we didn't contact you again.",
   followupDelayHours: 24,
   followupMaxAttempts: 3,
   reviewReminderEnabled: true,
@@ -64,6 +64,39 @@ const DEFAULT_SETTINGS = {
   // Set the first time Meta verifies the callback URL, or an event arrives.
   // Meta only verifies once, so this must survive redeploys.
   igWebhookVerifiedAt: '',
+
+  /* ---- Business profile ----
+   * What the bot believes it is working for. Every field here is empty by
+   * default, and an empty field falls back to config.business (i.e. the env
+   * vars), so an existing deploy keeps behaving exactly as it did before
+   * anyone opens this screen. Fill them in from the dashboard to point the
+   * same deploy at a different business - a clinic, a shop, anything - with
+   * no redeploy and no code change.
+   */
+  bizName: '',
+  // One line finishing "You are the assistant for X, ...".
+  bizWhat: '',
+  // One service or treatment per line.
+  bizServices: '',
+  // Comma-separated towns/areas covered. Empty means don't mention area.
+  bizAreas: '',
+  bizAddress: '',
+  bizPhone: '',
+  // What the bot should find out, one point per line.
+  bizCollect: '',
+  // The action to steer towards once it knows enough.
+  bizOffer: '',
+  // Hard limits, one per line. These become "never do this" instructions.
+  bizRules: '',
+  // Labels for the four flexible lead fields, in order. Comma-separated.
+  // Stored in the lead as carpetType/room/size/colour for sheet
+  // compatibility, but shown and asked about under these names.
+  bizFieldLabels: '',
+  // Whether the bot needs the customer's home address and postcode. True for
+  // anyone who travels to the customer (a fitter, a measure visit); false for
+  // anyone the customer comes to (a clinic, a salon), who only needs a phone
+  // number. Left true so existing deploys keep asking exactly as before.
+  bizNeedsAddress: true,
 };
 
 let settingsCache = null;

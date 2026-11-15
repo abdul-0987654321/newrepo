@@ -32,6 +32,7 @@ const OpenAI = require('openai');
 const config = require('./config');
 const log = require('./errors');
 const store = require('./store');
+const business = require('./business');
 
 const GRAPH_VERSION = 'v23.0';
 
@@ -589,6 +590,9 @@ async function processEvent(event) {
 
 const DEFAULT_PROMPT = `You are the Instagram assistant for {business}. You are replying to a real person in Instagram DMs.
 
+What {business} offers:
+{services}
+
 How to write:
 - Short, friendly, DM-style. One or two sentences, never a wall of text.
 - Sound like a helpful member of staff, not a script or a form.
@@ -608,8 +612,15 @@ async function generateReply(leadKey, text) {
   const settings = store.getSettings();
   const lead = store.getLead(leadKey) || {};
 
+  // {business} and {services} come from the business profile, so editing the
+  // profile in the dashboard changes the Instagram bot too - no redeploy.
+  const biz = business.profile();
   const prompt = (settings.igSystemPrompt || DEFAULT_PROMPT)
-    .replace(/\{business\}/g, config.business.name);
+    .replace(/\{business\}/g, biz.name)
+    .replace(
+      /\{services\}/g,
+      biz.services.length ? biz.services.map((s) => `- ${s}`).join('\n') : ''
+    );
 
   // Last 20 turns is plenty of context and keeps the token cost predictable.
   const history = store

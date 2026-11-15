@@ -19,6 +19,7 @@ const sheets = require('./sheets');
 const store = require('./store');
 const authStore = require('./authStore');
 const instagram = require('./instagram');
+const business = require('./business');
 
 // Records anything that escaped a try/catch and keeps the process alive - a
 // crash here would also drop the live WhatsApp connection.
@@ -128,6 +129,12 @@ async function main() {
 
   app.get('/api/settings', requireDashboardAuth, (req, res) => {
     res.json(store.getSettings());
+  });
+
+  // Ready-made business profiles the dashboard offers as a starting point.
+  // Applying one just fills the form - nothing is saved until Save is pressed.
+  app.get('/api/business/presets', requireDashboardAuth, (req, res) => {
+    res.json(business.PRESETS);
   });
 
   app.post('/api/settings', requireDashboardAuth, async (req, res) => {

@@ -58,13 +58,16 @@ const config = {
   },
 
   business: {
-    name: process.env.BUSINESS_NAME || 'KSC Carpets',
+    name: process.env.BUSINESS_NAME || 'Your Business',
     googleReviewLink: process.env.BUSINESS_GOOGLE_REVIEW_LINK || '',
     website: process.env.BUSINESS_WEBSITE || '',
     // Shown to a customer only when both are set - never invented if empty.
     address: process.env.BUSINESS_ADDRESS || '',
     phone: process.env.BUSINESS_PHONE || '',
-    // Pulled from ksc-carpets.com/services - keep this in sync if the
+    // Fallback only. The business profile in the dashboard overrides this,
+    // so there is normally no reason to touch it.
+    // Previously pulled from ksc-carpets.com/services. Kept so an existing
+    // deploy that has never opened the profile screen behaves as before.
     // client adds/removes a service on the website.
     services: [
       'Carpets - wool & synthetic, stair runners, bedrooms',

@@ -158,12 +158,21 @@
   label.field { display: block; margin-bottom: 14px; }
   label.field > span { display: block; font-weight: 600; font-size: 14px; margin-bottom: 2px; }
   label.field > em { display: block; font-style: normal; color: var(--ink-soft); font-size: 13.5px; margin-bottom: 7px; }
-  input[type="text"], input[type="number"], textarea {
+  input[type="text"], input[type="number"], textarea, select {
     width: 100%; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 7px;
     background: #fbfcfc; font-size: 14.5px;
   }
   textarea { min-height: 90px; resize: vertical; line-height: 1.55; }
-  input:focus, textarea:focus { background: #fff; border-color: var(--ink); outline: none; }
+  /* Drop the native control chrome so a dropdown sits level with the text
+     boxes beside it, and draw our own arrow. */
+  select {
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23667' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  input:focus, textarea:focus, select:focus { background-color: #fff; border-color: var(--ink); outline: none; }
 
   .switch { display: flex; align-items: flex-start; gap: 11px; cursor: pointer; margin-bottom: 14px; }
   .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -627,7 +636,94 @@
     <section class="view" id="view-settings">
       <div class="headline">
         <h1>Settings</h1>
-        <p>Turn the bot on or off, and control the messages it sends on its own.</p>
+        <p>Tell the bot what business it works for, turn it on or off, and control the messages it sends on its own.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Your business</h2>
+        <p class="lede">This is what the bot believes it works for. Change it here and both the WhatsApp and Instagram bots follow, straight away, with no redeploy.</p>
+
+        <label class="field">
+          <span>Start from a ready-made setup</span>
+          <em>Fills the boxes below so you can edit rather than start blank. Nothing is saved until you press Save.</em>
+          <div class="row">
+            <select id="bizPreset" style="flex:1; min-width:180px">
+              <option value="">Choose a type of business…</option>
+            </select>
+            <button class="btn quiet" id="applyPresetBtn">Fill the form</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Business name</span>
+          <input type="text" id="bizName" placeholder="Alpha Kosmetik">
+        </label>
+
+        <label class="field">
+          <span>What kind of business is it</span>
+          <em>Finishes the sentence "You are the assistant for [name], …".</em>
+          <input type="text" id="bizWhat" placeholder="a beauty and cosmetics clinic">
+        </label>
+
+        <label class="field">
+          <span>What it offers</span>
+          <em>One treatment or service per line. The bot will not invent anything outside this list.</em>
+          <textarea id="bizServices" rows="7" placeholder="Facials and skin treatments&#10;Laser hair removal&#10;Chemical peels"></textarea>
+        </label>
+
+        <label class="field">
+          <span>What the bot should find out</span>
+          <em>One point per line. It asks these naturally, one or two at a time.</em>
+          <textarea id="bizCollect" rows="5" placeholder="Their first name&#10;Which treatment they want&#10;Which days and times suit them"></textarea>
+        </label>
+
+        <label class="field">
+          <span>What it should offer them</span>
+          <em>The one thing it steers towards once it knows enough.</em>
+          <textarea id="bizOffer" rows="2" placeholder="Offer to book them a consultation, and ask which days suit them."></textarea>
+        </label>
+
+        <label class="field">
+          <span>What it must never do</span>
+          <em>One rule per line. These hold whatever the customer says.</em>
+          <textarea id="bizRules" rows="4" placeholder="Never give medical advice&#10;Never quote a price&#10;Never confirm an appointment as booked"></textarea>
+        </label>
+
+        <label class="switch">
+          <input type="checkbox" id="bizNeedsAddress">
+          <span class="track"></span>
+          <span class="label"><b>Ask for the customer's address</b><span>On if you travel to them. Off for a clinic or salon they come to — then it only asks for a phone number.</span></span>
+        </label>
+
+        <label class="field">
+          <span>Areas covered</span>
+          <em>Separated by commas. Leave empty if the area does not matter.</em>
+          <input type="text" id="bizAreas" placeholder="Zürich, Winterthur, Baden">
+        </label>
+
+        <div class="row">
+          <label class="field" style="flex:1; min-width:180px; margin:0">
+            <span>Address to give out</span>
+            <em>Left empty, the bot never invents one.</em>
+            <input type="text" id="bizAddress" placeholder="Bahnhofstrasse 1, 8001 Zürich">
+          </label>
+          <label class="field" style="flex:1; min-width:150px; margin:0">
+            <span>Phone to give out</span>
+            <em>Optional.</em>
+            <input type="text" id="bizPhone" placeholder="+41 44 123 45 67">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Names for the four detail columns</span>
+          <em>Separated by commas. These are the headings you see on a lead and in your Sheet.</em>
+          <input type="text" id="bizFieldLabels" placeholder="Treatment, Area of concern, Sessions, Preference">
+        </label>
+
+        <div class="row">
+          <button class="btn" id="saveBizBtn">Save changes</button>
+          <span class="saved" id="savedBiz"></span>
+        </div>
       </div>
 
       <div class="panel">
@@ -1186,7 +1282,8 @@ function renderLeads() {
       </tr></thead>
       <tbody>${rows.map((l) => {
         const ch = channelOf(l.phone);
-        const wants = [l.carpetType, l.room, l.size].filter(Boolean).join(' · ');
+        // The four flexible fields, whatever the business profile calls them.
+        const wants = [l.carpetType, l.room, l.size, l.colour].filter(Boolean).join(' · ');
         return `<tr>
           <td><b>${esc(displayName(l))}</b></td>
           <td><span class="pill ch-${ch}">${ch === 'instagram' ? 'Instagram' : 'WhatsApp'}</span></td>
@@ -1498,6 +1595,22 @@ const SETTING_FIELDS = [
   ['igBotEnabled', 'checkbox'],
   ['igSystemPrompt', 'text'],
   ['igUsername', 'text'],
+  ['bizName', 'text'],
+  ['bizWhat', 'text'],
+  ['bizServices', 'text'],
+  ['bizAreas', 'text'],
+  ['bizAddress', 'text'],
+  ['bizPhone', 'text'],
+  ['bizCollect', 'text'],
+  ['bizOffer', 'text'],
+  ['bizRules', 'text'],
+  ['bizFieldLabels', 'text'],
+  ['bizNeedsAddress', 'checkbox'],
+];
+
+const BIZ_FIELD_IDS = [
+  'bizName', 'bizWhat', 'bizServices', 'bizAreas', 'bizAddress', 'bizPhone',
+  'bizCollect', 'bizOffer', 'bizRules', 'bizFieldLabels', 'bizNeedsAddress',
 ];
 
 let settings = {};
@@ -1542,7 +1655,46 @@ function wireSave(btnId, noteId, ids) {
   });
 }
 
+wireSave('saveBizBtn', 'savedBiz', BIZ_FIELD_IDS);
 wireSave('saveBotBtn', 'savedBot', ['botEnabled', 'adminNotificationNumber', 'igUsername']);
+
+/* The ready-made business setups. Picking one only fills the form - the owner
+ * still edits it and presses Save, so nothing changes behind their back. */
+let bizPresets = {};
+
+async function loadBizPresets() {
+  const presets = await getJson('/api/business/presets');
+  if (!presets) return;
+  bizPresets = presets;
+  const select = document.getElementById('bizPreset');
+  if (!select) return;
+  Object.entries(presets).forEach(([key, preset]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = preset.label || key;
+    select.appendChild(option);
+  });
+}
+
+const applyPresetBtn = document.getElementById('applyPresetBtn');
+if (applyPresetBtn) {
+  applyPresetBtn.addEventListener('click', () => {
+    const key = document.getElementById('bizPreset').value;
+    const preset = bizPresets[key];
+    const note = document.getElementById('savedBiz');
+    if (!preset) {
+      flash(note, 'Pick a type of business first');
+      return;
+    }
+    BIZ_FIELD_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || !(id in preset)) return;
+      if (el.type === 'checkbox') el.checked = preset[id] !== false;
+      else el.value = preset[id] === undefined || preset[id] === null ? '' : preset[id];
+    });
+    flash(note, 'Filled in - check it, then Save');
+  });
+}
 wireSave('saveFollowupBtn', 'savedFollowup', ['followupEnabled', 'followupMessage', 'followupDelayHours', 'followupMaxAttempts']);
 wireSave('saveReviewBtn', 'savedReview', ['reviewReminderEnabled', 'reviewReminderMessage', 'reviewReminderDelayHours', 'reviewReminderMaxAttempts']);
 
@@ -1680,7 +1832,7 @@ async function boot() {
   if (health && health.business) {
     document.getElementById('railBiz').textContent = health.business;
   }
-  await Promise.all([loadStatus(), loadSettings(), loadLeads(), loadThreads()]);
+  await Promise.all([loadStatus(), loadSettings(), loadBizPresets(), loadLeads(), loadThreads()]);
   await loadInstagram();
   const fromHash = window.location.hash.replace('#', '');
   if (fromHash) showView(fromHash, true);
